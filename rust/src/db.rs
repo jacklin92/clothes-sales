@@ -32,18 +32,17 @@ CREATE TABLE IF NOT EXISTS variant(
   product_id INTEGER NOT NULL REFERENCES product(id),
   color_id INTEGER NOT NULL REFERENCES color(id),
   size_id INTEGER NOT NULL REFERENCES size(id),
-  sku TEXT NOT NULL UNIQUE, barcode TEXT NOT NULL DEFAULT '',
+  sku TEXT NOT NULL UNIQUE,
   safety_stock INTEGER NOT NULL DEFAULT 0 CHECK(safety_stock>=0),
   qty_on_hand INTEGER NOT NULL DEFAULT 0, avg_cost INTEGER NOT NULL DEFAULT 0,
   UNIQUE(product_id, color_id, size_id));
-CREATE UNIQUE INDEX IF NOT EXISTS variant_barcode ON variant(barcode) WHERE barcode<>'';
 CREATE TABLE IF NOT EXISTS doc(
   id INTEGER PRIMARY KEY,
   type TEXT NOT NULL CHECK(type IN ('PO','SO','AJ')),
   no TEXT NOT NULL UNIQUE, date TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'posted' CHECK(status IN ('posted','void')),
   supplier_id INTEGER REFERENCES supplier(id),
-  channel TEXT NOT NULL DEFAULT '', payment TEXT NOT NULL DEFAULT '',
+  payment TEXT NOT NULL DEFAULT '',
   discount INTEGER NOT NULL DEFAULT 0 CHECK(discount>=0),
   kind TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
   void_reason TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, voided_at TEXT NOT NULL DEFAULT '',
@@ -69,7 +68,7 @@ CREATE TABLE IF NOT EXISTS audit(
 CREATE TRIGGER IF NOT EXISTS doc_no_delete BEFORE DELETE ON doc
   BEGIN SELECT RAISE(ABORT, '單據不可刪除，請改用作廢'); END;
 CREATE TRIGGER IF NOT EXISTS doc_locked BEFORE UPDATE OF
-  type, no, date, supplier_id, channel, payment, discount, kind, reason, note, created_at ON doc
+  type, no, date, supplier_id, payment, discount, kind, reason, note, created_at ON doc
   BEGIN SELECT RAISE(ABORT, '單據建立後不可修改，打錯請作廢後重開'); END;
 CREATE TRIGGER IF NOT EXISTS doc_no_unvoid BEFORE UPDATE OF status ON doc WHEN OLD.status='void'
   BEGIN SELECT RAISE(ABORT, '已作廢的單據不能恢復'); END;
@@ -155,7 +154,6 @@ pub fn message(e: &rusqlite::Error) -> String {
         ("supplier.code", "廠商代號已存在，請換一個"),
         ("color.code", "顏色代碼已存在"),
         ("size.code", "尺寸代碼已存在"),
-        ("variant.barcode", "這個條碼已被其他 SKU 使用"),
         ("FOREIGN KEY", "這筆資料已被商品或單據使用，無法刪除"),
         ("database is locked", "資料庫忙碌中，請稍後再試"),
         ("CHECK constraint", "資料內容不符規則（例如數量為 0 或金額為負數）"),

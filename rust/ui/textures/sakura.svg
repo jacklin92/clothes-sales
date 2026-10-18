@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1636"/>
+      <stop offset=".45" stop-color="#683a63"/>
+      <stop offset=".78" stop-color="#b86f88"/>
+      <stop offset="1" stop-color="#e9a8a2"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="1050" cy="760" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd8c4" stop-opacity=".6"/>
+      <stop offset="1" stop-color="#ffd8c4" stop-opacity="0"/>
+    </radialGradient>
+    <g id="flower">
+      <ellipse cx="0" cy="-9" rx="6" ry="9"/>
+      <ellipse cx="0" cy="-9" rx="6" ry="9" transform="rotate(72)"/>
+      <ellipse cx="0" cy="-9" rx="6" ry="9" transform="rotate(144)"/>
+      <ellipse cx="0" cy="-9" rx="6" ry="9" transform="rotate(216)"/>
+      <ellipse cx="0" cy="-9" rx="6" ry="9" transform="rotate(288)"/>
+      <circle r="3.5" fill="#d9607f"/>
+    </g>
+    <ellipse id="petal" rx="5" ry="3"/>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <rect width="1600" height="1000" fill="url(#glow)"/>
+  <!-- 遠方丘陵 -->
+  <path fill="#5a2f55" opacity=".7" d="M0 860C200 820 380 800 560 830S900 870 1100 830 1440 800 1600 820V1000H0Z"/>
+  <path fill="#3b1d3c" d="M0 920C240 890 460 900 700 920S1200 950 1600 910V1000H0Z"/>
+
+  <!-- 左上枝幹 -->
+  <g fill="none" stroke="#24121f" stroke-linecap="round">
+    <path stroke-width="26" d="M-20 120C120 140 220 190 320 250"/>
+    <path stroke-width="16" d="M320 250C400 300 470 330 560 340"/>
+    <path stroke-width="10" d="M200 180C240 120 300 90 380 70"/>
+    <path stroke-width="8" d="M430 310C470 380 480 430 470 500"/>
+    <path stroke-width="6" d="M560 340C620 340 670 320 720 290"/>
+  </g>
+  <!-- 右上枝幹 -->
+  <g fill="none" stroke="#24121f" stroke-linecap="round">
+    <path stroke-width="22" d="M1640 60C1520 110 1440 160 1360 230"/>
+    <path stroke-width="12" d="M1360 230C1300 280 1240 300 1170 310"/>
+    <path stroke-width="8" d="M1450 150C1430 220 1440 280 1470 340"/>
+  </g>
+
+  <!-- 花 -->
+  <g fill="#f8cbd8" opacity=".75">
+    <use xlink:href="#flower" x="300" y="230"/><use xlink:href="#flower" x="340" y="268" transform="translate(0 0)"/>
+    <use xlink:href="#flower" x="260" y="200"/><use xlink:href="#flower" x="380" y="72"/><use xlink:href="#flower" x="350" y="96"/>
+    <use xlink:href="#flower" x="460" y="330"/><use xlink:href="#flower" x="500" y="350"/><use xlink:href="#flower" x="560" y="330"/>
+    <use xlink:href="#flower" x="610" y="356"/><use xlink:href="#flower" x="700" y="290"/><use xlink:href="#flower" x="724" y="316"/>
+    <use xlink:href="#flower" x="470" y="470"/><use xlink:href="#flower" x="448" y="436"/><use xlink:href="#flower" x="160" y="160"/>
+    <use xlink:href="#flower" x="120" y="130"/><use xlink:href="#flower" x="230" y="150"/>
+    <use xlink:href="#flower" x="1360" y="226"/><use xlink:href="#flower" x="1320" y="262"/><use xlink:href="#flower" x="1250" y="296"/>
+    <use xlink:href="#flower" x="1180" y="306"/><use xlink:href="#flower" x="1205" y="334"/><use xlink:href="#flower" x="1440" y="170"/>
+    <use xlink:href="#flower" x="1460" y="330"/><use xlink:href="#flower" x="1430" y="290"/><use xlink:href="#flower" x="1520" y="110"/>
+  </g>
+  <g fill="#fde3ea" opacity=".9">
+    <use xlink:href="#flower" x="280" y="250"/><use xlink:href="#flower" x="530" y="318"/><use xlink:href="#flower" x="1290" y="246"/>
+    <use xlink:href="#flower" x="1480" y="130"/><use xlink:href="#flower" x="420" y="300"/>
+  </g>
+
+  <!-- 飄落的花瓣 -->
+  <g fill="#f7c4d2" opacity=".75">
+    <use xlink:href="#petal" transform="translate(620 480) rotate(30)"/><use xlink:href="#petal" transform="translate(760 560) rotate(-20)"/>
+    <use xlink:href="#petal" transform="translate(880 430) rotate(60)"/><use xlink:href="#petal" transform="translate(980 620) rotate(10)"/>
+    <use xlink:href="#petal" transform="translate(1080 500) rotate(-45)"/><use xlink:href="#petal" transform="translate(540 650) rotate(80)"/>
+    <use xlink:href="#petal" transform="translate(300 560) rotate(-30)"/><use xlink:href="#petal" transform="translate(1250 600) rotate(40)"/>
+    <use xlink:href="#petal" transform="translate(1400 480) rotate(-60)"/><use xlink:href="#petal" transform="translate(820 720) rotate(20)"/>
+    <use xlink:href="#petal" transform="translate(680 380) rotate(-10)"/><use xlink:href="#petal" transform="translate(1160 420) rotate(70)"/>
+    <use xlink:href="#petal" transform="translate(420 740) rotate(15)"/><use xlink:href="#petal" transform="translate(1330 720) rotate(-25)"/>
+  </g>
+</svg>

@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c1d15"/>
+      <stop offset=".45" stop-color="#2b4b39"/>
+      <stop offset=".7" stop-color="#466a52"/>
+      <stop offset="1" stop-color="#11241a"/>
+    </linearGradient>
+    <radialGradient id="moon" cx="1180" cy="230" r="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e6f2d8" stop-opacity=".55"/>
+      <stop offset=".25" stop-color="#b9d4b0" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#b9d4b0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8f3e2" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#e8f3e2" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#e8f3e2" stop-opacity="0"/>
+    </linearGradient>
+    <!-- 竹節：以重複圖樣填滿竹竿 -->
+    <pattern id="farStalk" width="40" height="110" patternUnits="userSpaceOnUse">
+      <rect width="40" height="110" fill="#86ab8b"/><rect width="40" height="3" fill="#5f8466"/>
+    </pattern>
+    <pattern id="midStalk" width="60" height="150" patternUnits="userSpaceOnUse">
+      <rect width="60" height="150" fill="#4d7a5a"/><rect width="60" height="4" fill="#2f5340"/><rect y="4" width="60" height="3" fill="#6f9c78"/>
+    </pattern>
+    <pattern id="nearStalk" width="80" height="210" patternUnits="userSpaceOnUse">
+      <rect width="80" height="210" fill="#173324"/><rect width="80" height="6" fill="#0a1a12"/><rect y="6" width="80" height="4" fill="#2c513b"/>
+    </pattern>
+    <path id="leaf" d="M0 0C22-7 54-7 80 0C54 7 22 7 0 0Z"/>
+    <g id="tuft">
+      <use xlink:href="#leaf" transform="rotate(-20)"/>
+      <use xlink:href="#leaf" transform="rotate(8) scale(.9)"/>
+      <use xlink:href="#leaf" transform="rotate(32) scale(.8)"/>
+      <use xlink:href="#leaf" transform="rotate(-48) scale(.75)"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <rect width="1600" height="1000" fill="url(#moon)"/>
+  <circle cx="1180" cy="230" r="46" fill="#eef6e4" opacity=".75"/>
+
+  <!-- 遠景竹林 -->
+  <g fill="url(#farStalk)" opacity=".28">
+    <rect x="70" width="12" height="1000"/><rect x="190" width="10" height="1000"/><rect x="320" width="14" height="1000"/>
+    <rect x="455" width="11" height="1000"/><rect x="600" width="13" height="1000"/><rect x="760" width="10" height="1000"/>
+    <rect x="880" width="12" height="1000"/><rect x="1010" width="14" height="1000"/><rect x="1300" width="11" height="1000"/>
+    <rect x="1420" width="13" height="1000"/><rect x="1530" width="10" height="1000"/>
+  </g>
+  <rect y="380" width="1600" height="260" fill="url(#mist)"/>
+
+  <!-- 中景竹林 -->
+  <g fill="url(#midStalk)" opacity=".75">
+    <rect x="130" width="24" height="1000"/><rect x="380" width="28" height="1000"/><rect x="540" width="22" height="1000"/>
+    <rect x="820" width="26" height="1000"/><rect x="1080" width="24" height="1000"/><rect x="1360" width="28" height="1000"/>
+  </g>
+  <g fill="#4f7f5d" opacity=".7">
+    <use xlink:href="#tuft" x="154" y="180"/><use xlink:href="#tuft" x="408" y="300" transform="scale(1)"/>
+    <use xlink:href="#tuft" x="562" y="120"/><use xlink:href="#tuft" x="846" y="240"/>
+    <use xlink:href="#tuft" x="1104" y="150"/><use xlink:href="#tuft" x="1388" y="320"/>
+  </g>
+  <rect y="620" width="1600" height="240" fill="url(#mist)"/>
+
+  <!-- 近景竹竿（框住畫面兩側） -->
+  <g fill="url(#nearStalk)">
+    <rect x="-10" width="56" height="1000"/><rect x="66" width="42" height="1000"/>
+    <rect x="1490" width="58" height="1000"/><rect x="1566" width="44" height="1000"/>
+  </g>
+  <g fill="#1d3d2a">
+    <use xlink:href="#tuft" x="100" y="90" transform="scale(1)"/><use xlink:href="#tuft" x="104" y="420"/>
+    <use xlink:href="#tuft" x="40" y="260"/>
+  </g>
+  <g fill="#1d3d2a" transform="translate(1600 0) scale(-1 1)">
+    <use xlink:href="#tuft" x="60" y="140"/><use xlink:href="#tuft" x="100" y="380"/><use xlink:href="#tuft" x="30" y="620"/>
+  </g>
+</svg>

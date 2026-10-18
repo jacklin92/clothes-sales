@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121c36"/>
+      <stop offset=".42" stop-color="#2f4a76"/>
+      <stop offset=".72" stop-color="#8f84a3"/>
+      <stop offset="1" stop-color="#e3a47c"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="1120" cy="620" r="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe4b5" stop-opacity=".9"/>
+      <stop offset=".18" stop-color="#ffc58a" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#ffb070" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b7798"/>
+      <stop offset=".22" stop-color="#2e4468"/>
+      <stop offset="1" stop-color="#0c172b"/>
+    </linearGradient>
+    <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".55" stop-color="#f3d9c6" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="glint" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffd9a6" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#ffe2b8" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#ffd9a6" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 天空與夕陽 -->
+  <rect width="1600" height="660" fill="url(#sky)"/>
+  <rect width="1600" height="1000" fill="url(#sun)"/>
+  <circle cx="1120" cy="612" r="34" fill="#fff2d8" opacity=".92"/>
+
+  <!-- 遠山 -->
+  <path fill="#8a8db0" opacity=".55" d="M0 560C120 520 200 468 300 498S430 440 520 430 660 500 760 490 930 400 1040 420 1180 500 1270 490 1450 430 1600 470V662H0Z"/>
+  <!-- 中景山脈 -->
+  <path fill="#56628a" opacity=".85" d="M0 612C90 572 170 522 260 546S400 500 480 506 600 570 690 576 820 540 880 552 960 640 1010 652H1240C1300 600 1380 522 1480 532S1580 560 1600 572V662H0Z"/>
+  <!-- 山腳雲霧 -->
+  <rect y="540" width="1600" height="150" fill="url(#mist)"/>
+
+  <!-- 海面 -->
+  <rect y="650" width="1600" height="350" fill="url(#sea)"/>
+  <g fill="url(#glint)">
+    <rect x="1040" y="664" width="160" height="3" opacity=".9"/>
+    <rect x="1010" y="684" width="220" height="3" opacity=".75"/>
+    <rect x="1060" y="702" width="120" height="2" opacity=".8"/>
+    <rect x="980" y="726" width="280" height="3" opacity=".55"/>
+    <rect x="1030" y="756" width="180" height="2" opacity=".6"/>
+    <rect x="950" y="792" width="340" height="3" opacity=".4"/>
+    <rect x="1010" y="836" width="220" height="2" opacity=".4"/>
+    <rect x="920" y="888" width="400" height="3" opacity=".28"/>
+  </g>
+  <g fill="none" stroke="#a9bbdc" stroke-opacity=".14" stroke-width="2">
+    <path d="M80 760C220 752 360 768 500 760S780 752 900 762"/>
+    <path d="M40 850C240 838 420 862 620 850S900 840 1000 852"/>
+    <path d="M300 940C500 928 700 952 900 940"/>
+  </g>
+
+  <!-- 近景岬角 -->
+  <path fill="#1c2742" d="M0 598C80 588 160 560 240 600S380 660 460 702 560 780 600 1000H0Z"/>
+  <path fill="#141d33" d="M1600 640C1520 650 1470 700 1420 760S1360 900 1340 1000H1600Z"/>
+</svg>

@@ -98,7 +98,7 @@ function stat(label, value, sub) {
 
 function docSummary(d) {
   if (d.type === 'PO') return esc(d.supplier);
-  if (d.type === 'SO') return esc(`${d.channel}／${d.payment}`);
+  if (d.type === 'SO') return esc(d.payment);
   return esc(`${d.kind}：${d.reason}`);
 }
 
@@ -118,7 +118,7 @@ function scanBox(id, placeholder) {
     <button class="btn" data-scan="${id}">搜尋</button></div><div class="scan-results" id="${id}-r"></div></div>`;
 }
 
-/** onVariant(v)：SKU/條碼完全相符；onProduct(p)：選定商品（含 variants） */
+/** onVariant(v)：SKU 完全相符；onProduct(p)：選定商品（含 variants） */
 function bindScan(id, { onVariant, onProduct }) {
   const input = $('#' + id), box = $(`#${id}-r`);
   const go = async () => {
@@ -130,7 +130,7 @@ function bindScan(id, { onVariant, onProduct }) {
     if (r.variant) r.products = r.products.filter(p => p.id === r.variant.product_id);
     if (r.products.length === 1) { input.value = ''; return onProduct(r.products[0]); }
     if (!r.products.length) {
-      box.innerHTML = `<div class="msg">找不到「${esc(q)}」。請確認貨號、條碼，或先到「商品」建檔。</div>`;
+      box.innerHTML = `<div class="msg">找不到「${esc(q)}」。請確認貨號或品名，或先到「商品」建檔。</div>`;
       return;
     }
     box.innerHTML = r.products.map((p, i) => `<button data-i="${i}">${img(p.image)}<span><b>${esc(p.code)}</b> ${esc(p.name)}<br>
@@ -328,7 +328,7 @@ async function showDoc(id) {
   const total = d.lines.reduce((a, l) => a + l.subtotal, 0);
   const info = [
     ['日期', d.date], ['類型', TYPE[d.type]],
-    d.type === 'PO' && ['廠商', d.supplier], d.type === 'SO' && ['通路', d.channel], d.type === 'SO' && ['付款', d.payment],
+    d.type === 'PO' && ['廠商', d.supplier], d.type === 'SO' && ['付款', d.payment],
     d.type === 'AJ' && ['類型', d.kind], d.type === 'AJ' && ['原因', d.reason],
     d.note && ['備註', d.note], ['建檔時間', d.created_at],
     isVoid && ['作廢時間', d.voided_at], isVoid && ['作廢原因', d.void_reason],
@@ -342,8 +342,10 @@ async function showDoc(id) {
     ${d.photos.length ? `<div class="photos">${d.photos.map(p => `<div class="ph"><img src="${MEDIA}${esc(p.image)}" data-photo="${esc(p.image)}" alt=""></div>`).join('')}</div>` : ''}
     ${table(heads, rows)}
     ${d.type === 'AJ' ? '' : `<p style="text-align:right">${d.discount ? `小計 ${money(total)}　折扣 ${money(d.discount)}　` : ''}<b class="big-total">${money(total - d.discount)}</b></p>`}
-    </div><div class="actions">${isVoid ? '' : '<button class="btn danger" id="dd-void" style="margin-right:auto">作廢這張單據</button>'}<button class="btn" id="dd-close">關閉</button></div>`, true);
+    </div><div class="actions">${isVoid ? '' : '<button class="btn danger" id="dd-void" style="margin-right:auto">作廢這張單據</button>'}
+    ${d.type === 'SO' ? '<button class="btn" id="dd-export">匯出銷貨單 Excel</button>' : ''}<button class="btn" id="dd-close">關閉</button></div>`, true);
   $('#dd-close', dlg).onclick = () => dlg.close();
+  $('#dd-export', dlg)?.addEventListener('click', async () => toast(`已匯出：${await call('export_sale', { id })}`));
   $('#dd-void', dlg)?.addEventListener('click', async () => {
     const reason = await promptBox(`作廢 ${d.no}`, '作廢原因', '確定作廢', true);
     if (!reason) return;
@@ -362,9 +364,9 @@ PAGES.home = async main => {
   const s = META.status;
   main.innerHTML = head('首頁', new Date().toLocaleDateString('zh-TW', { dateStyle: 'full' })) + `
     <div class="quick">
-      <a class="big-btn primary" href="#/sale"><b>銷貨收銀</b><span>掃條碼開單、退貨</span></a>
+      <a class="big-btn" href="#/sale"><b>銷貨收銀</b><span>開單、退貨</span></a>
       <a class="big-btn" href="#/purchase"><b>進貨</b><span>廠商到貨入庫</span></a>
-      <a class="big-btn" href="#/lookup"><b>查庫存</b><span>貨號、條碼、品名</span></a>
+      <a class="big-btn" href="#/lookup"><b>查庫存</b><span>貨號、SKU、品名</span></a>
       <a class="big-btn" href="#/product/new"><b>新增商品</b><span>建檔並產生 SKU</span></a>
     </div>
     <div class="stats">
@@ -394,14 +396,13 @@ PAGES.home = async main => {
 
 // ---- 銷貨 ----
 PAGES.sale = async main => {
-  const s = drafts.sale ??= { date: today(), channel: META.channels[0], payment: META.payments[0], discount: '', note: '', lines: [] };
-  main.innerHTML = head('銷貨收銀', '掃描條碼，或輸入貨號／SKU／品名後按 Enter。客人退貨：把數量改成負數。',
+  const s = drafts.sale ??= { date: today(), payment: META.payments[0], discount: '', note: '', lines: [] };
+  main.innerHTML = head('銷貨收銀', '輸入貨號、SKU 或品名後按 Enter。客人退貨：把數量改成負數。',
       '<button class="btn small" id="s-clear">清空重來</button>') + `
     <section class="card"><div class="toolbar">
       <label>日期<input type="date" id="s-date" value="${s.date}" max="${today()}"></label>
-      <label>通路<select id="s-channel">${options(META.channels, s.channel)}</select></label>
       <label>付款方式<select id="s-payment">${options(META.payments, s.payment)}</select></label>
-      ${scanBox('s-scan', '掃條碼或輸入貨號、SKU、品名')}
+      ${scanBox('s-scan', '輸入貨號、SKU 或品名')}
     </div></section>
     <section class="card"><h2>銷貨明細</h2><div id="s-lines"></div></section>
     <div class="checkout">
@@ -410,7 +411,7 @@ PAGES.sale = async main => {
       <div class="total"><span id="s-count"></span><b id="s-total"></b></div>
       <button class="btn primary big" id="s-submit">結帳</button>
     </div>`;
-  for (const k of ['date', 'channel', 'payment', 'discount', 'note']) $(`#s-${k}`).oninput = e => { s[k] = e.target.value; saleTotals(); };
+  for (const k of ['date', 'payment', 'discount', 'note']) $(`#s-${k}`).oninput = e => { s[k] = e.target.value; saleTotals(); };
   $('#s-clear').onclick = async () => {
     if (s.lines.length && !await confirmBox('清空銷貨單', '目前的明細會全部清除，確定嗎？', '清空', true)) return;
     drafts.sale = null; route();
@@ -440,7 +441,7 @@ function renderSaleLines() {
         `<input type="number" step="1" data-i="${i}" data-f="qty" value="${l.qty}" aria-label="數量">`,
         `<input type="number" min="0" step="1" data-i="${i}" data-f="price" value="${esc(l.price)}" aria-label="單價">`,
         `<span data-sub="${i}">${money(l.qty * (cents(l.price) || 0))}</span>`, `<button class="icon-btn" data-del="${i}" title="移除">×</button>`] };
-    }), '尚未加入商品。請在上方掃條碼或輸入貨號。');
+    }), '尚未加入商品。請在上方輸入貨號、SKU 或品名。');
   $$('input[data-i]', box).forEach(inp => {
     inp.oninput = () => { const l = s.lines[inp.dataset.i]; l[inp.dataset.f] = inp.dataset.f === 'qty' ? (inp.value === '' ? '' : +inp.value) : inp.value; saleTotals(); };
     inp.onchange = renderSaleLines;
@@ -471,10 +472,10 @@ async function submitSale() {
   const total = s.lines.reduce((a, l) => a + l.qty * cents(l.price), 0) - discount;
   const pcs = s.lines.reduce((a, l) => a + l.qty, 0);
   const returns = s.lines.filter(l => l.qty < 0).length;
-  if (!await confirmBox('確認結帳', `<p>${esc(s.channel)}／${esc(s.payment)}・${s.lines.length} 項・${pcs} 件
+  if (!await confirmBox('確認結帳', `<p>${esc(s.payment)}・${s.lines.length} 項・${pcs} 件
       ${returns ? `<br><span class="red">含 ${returns} 項退貨</span>` : ''}${discount ? `<br>折扣 ${money(discount)}` : ''}</p>
       <p class="big-total">${money(total)}</p>`, '確認結帳')) return;
-  const no = await call('create_doc', { input: { type: 'SO', date: s.date, channel: s.channel, payment: s.payment, discount, note: s.note,
+  const no = await call('create_doc', { input: { type: 'SO', date: s.date, payment: s.payment, discount, note: s.note,
     lines: s.lines.map(l => ({ variant_id: l.variant.id, qty: l.qty, unit_price: cents(l.price) })) } });
   toast(`已建立銷貨單 ${no}，實收 ${money(total)}`);
   drafts.sale = null;
@@ -485,7 +486,7 @@ async function submitSale() {
 PAGES.purchase = async main => {
   const p = drafts.purchase ??= { date: today(), supplier_id: '', note: '', photos: [], lines: [] };
   const suppliers = await call('suppliers');
-  main.innerHTML = head('進貨', '步驟：選廠商 → 附照片 → 加入商品與數量 → 存檔', '<button class="btn small" id="p-clear">清空重來</button>') + `
+  main.innerHTML = head('進貨', '步驟：選廠商 → 加入商品與數量 → 存檔（照片可附可不附）', '<button class="btn small" id="p-clear">清空重來</button>') + `
     <section class="card"><h2>1. 廠商與日期</h2><div class="toolbar">
       <label>廠商 *<select id="p-supplier"><option value="">請選擇廠商</option>
         ${suppliers.map(s => `<option value="${s.id}" ${s.id === +p.supplier_id ? 'selected' : ''}>${esc(s.code)} ${esc(s.name)}</option>`).join('')}</select></label>
@@ -493,7 +494,7 @@ PAGES.purchase = async main => {
       <label>進貨日期<input type="date" id="p-date" value="${p.date}" max="${today()}"></label>
       <label class="grow">備註<input id="p-note" value="${esc(p.note)}" style="width:100%"></label>
     </div></section>
-    <section class="card"><h2>2. 照片<small>至少一張，例如廠商貨單或商品照</small></h2>
+    <section class="card"><h2>2. 照片<small>選填，例如廠商貨單或商品照</small></h2>
       <div class="photos" id="p-photos"></div>
       <label class="btn">選擇照片<input type="file" accept="image/*" multiple hidden id="p-file"></label></section>
     <section class="card"><h2>3. 商品明細</h2>
@@ -562,7 +563,6 @@ async function submitPurchase() {
   const p = drafts.purchase;
   const problems = [
     !p.supplier_id && '請選擇廠商',
-    !p.photos.length && '請至少附一張照片',
     !p.lines.length && '請加入商品明細',
     p.lines.some(l => !Number.isInteger(l.qty) || l.qty <= 0) && '進貨數量必須是大於 0 的整數',
     p.lines.some(l => isNaN(cents(l.price)) || cents(l.price) < 0) && '請填寫正確的進貨單價',
@@ -583,7 +583,7 @@ async function submitPurchase() {
 PAGES.adjust = async main => {
   const a = drafts.adjust ??= { date: today(), kind: META.kinds[0], variant: null, qty: '', counted: '', reason: '', note: '' };
   main.innerHTML = head('庫存調整', '盤點差異、瑕疵報廢、退回廠商時使用。每次調整都要填寫原因。') + `
-    <section class="card"><h2>1. 選擇商品</h2>${scanBox('a-scan', '掃條碼或輸入貨號、SKU、品名')}<div id="a-sel" style="margin-top:14px"></div></section>
+    <section class="card"><h2>1. 選擇商品</h2>${scanBox('a-scan', '輸入貨號、SKU 或品名')}<div id="a-sel" style="margin-top:14px"></div></section>
     <section class="card"><h2>2. 調整內容</h2><div class="toolbar">
       <label>類型<select id="a-kind">${options(META.kinds, a.kind)}</select></label>
       <span id="a-qtybox"></span>
@@ -643,7 +643,7 @@ PAGES.adjust = async main => {
 
 // ---- 查庫存 ----
 PAGES.lookup = async (main, arg) => {
-  main.innerHTML = head('查庫存', '輸入本店貨號、SKU、條碼或品名') + `<section class="card">${scanBox('l-scan', '例如 4B7A695A9、素T')}</section><div id="l-out"></div>`;
+  main.innerHTML = head('查庫存', '輸入本店貨號、SKU 或品名') + `<section class="card">${scanBox('l-scan', '例如 4B7A695A9、素T')}</section><div id="l-out"></div>`;
   const show = p => {
     $('#l-out').innerHTML = `<section class="card"><div class="product-card">${img(p.image, 'preview')}<div class="info">
       <h2>${esc(p.code)} ${esc(p.name)}</h2>
@@ -685,8 +685,8 @@ function debounce(fn, ms = 300) { let t; return (...a) => { clearTimeout(t); t =
 // ---- 商品 ----
 PAGES.products = async main => {
   drafts.productQ ??= '';
-  main.innerHTML = head('商品', '點選商品可修改資料、條碼、安全庫存', '<a class="btn primary" href="#/product/new">＋ 新增商品</a>') + `
-    <section class="card"><input type="search" id="pr-q" value="${esc(drafts.productQ)}" placeholder="搜尋貨號、品名、廠商貨號、SKU、條碼" style="width:100%"></section>
+  main.innerHTML = head('商品', '點選商品可修改資料、安全庫存', '<a class="btn primary" href="#/product/new">＋ 新增商品</a>') + `
+    <section class="card"><input type="search" id="pr-q" value="${esc(drafts.productQ)}" placeholder="搜尋貨號、品名、廠商貨號、SKU" style="width:100%"></section>
     <section class="card" id="pr-out"></section>`;
   const load = async () => {
     const list = await call('products', { q: drafts.productQ });
@@ -708,10 +708,9 @@ PAGES.product = async (main, arg) => {
     <section class="card"><h2>商品資料</h2><form id="pf">${await productForm(p)}</form>
       <div class="row" style="margin-top:16px"><button class="btn primary" id="pf-save">${p.id ? '儲存變更' : '建立商品'}</button>
       ${p.id ? '<button class="btn danger" id="pf-del" style="margin-left:auto">刪除商品</button>' : ''}</div></section>
-    ${p.id ? `<section class="card"><h2>SKU<small>條碼、安全庫存修改後自動儲存</small></h2>${table(
-      ['SKU', '顏色', '尺寸', '條碼', ['安全庫存', 'num'], ['庫存', 'num'], ['平均成本', 'num'], ''],
+    ${p.id ? `<section class="card"><h2>SKU<small>安全庫存修改後自動儲存</small></h2>${table(
+      ['SKU', '顏色', '尺寸', ['安全庫存', 'num'], ['庫存', 'num'], ['平均成本', 'num'], ''],
       p.variants.map(v => [`<b>${esc(v.sku)}</b>`, esc(v.color), esc(v.size),
-        `<input data-vb="${v.id}" value="${esc(v.barcode)}" placeholder="掃描或輸入條碼">`,
         `<input type="number" min="0" step="1" data-vs="${v.id}" value="${v.safety_stock}">`,
         v.qty_on_hand, money(v.avg_cost),
         v.used ? '<span class="muted" title="已有單據，不可刪除">使用中</span>' : `<button class="icon-btn" data-vdel="${v.id}" title="刪除 SKU">×</button>`]),
@@ -731,14 +730,12 @@ PAGES.product = async (main, arg) => {
     toast('已刪除商品');
     location.hash = '#/products';
   });
-  $$('[data-vb], [data-vs]').forEach(inp => inp.onchange = async () => {
-    const id = +(inp.dataset.vb || inp.dataset.vs);
-    const barcode = $(`[data-vb="${id}"]`).value, safety = +$(`[data-vs="${id}"]`).value;
+  $$('[data-vs]').forEach(inp => inp.onchange = async () => {
+    const safety = +inp.value;
     if (!Number.isInteger(safety) || safety < 0) return toast('安全庫存必須是 0 以上的整數', 'error');
-    try { await call('update_variant', { id, barcode, safety }); toast('已儲存'); inp.classList.remove('invalid'); }
+    try { await call('update_variant', { id: +inp.dataset.vs, safety }); toast('已儲存'); inp.classList.remove('invalid'); }
     catch { inp.classList.add('invalid'); }
   });
-  $$('[data-vb]').forEach(inp => inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); });
   $$('[data-vdel]').forEach(b => b.onclick = async () => {
     if (!await confirmBox('刪除 SKU', '確定刪除這個 SKU？', '刪除', true)) return;
     await call('delete_item', { what: 'variant', id: +b.dataset.vdel });
@@ -852,6 +849,20 @@ document.addEventListener('click', e => {
   else if (t.dataset.photo) showPhoto(t.dataset.photo);
   else if (t.dataset.href) location.hash = t.dataset.href;
 });
+
+// 主題：記在本機，下次開啟沿用
+const THEMES = [['walnut', '胡桃木'], ['mountain', '山海'], ['bamboo', '竹林'], ['night', '星夜'], ['sakura', '櫻花'], ['ink', '水墨']];
+function applyTheme(key) {
+  const t = THEMES.find(x => x[0] === key) || THEMES[0];
+  document.documentElement.dataset.theme = t[0];
+  $('#theme-btn').textContent = `主題：${t[1]}`;
+  try { localStorage.setItem('theme', t[0]); } catch { /* 無法儲存時只影響本次 */ }
+}
+$('#theme-btn').onclick = () => {
+  const i = THEMES.findIndex(x => x[0] === document.documentElement.dataset.theme);
+  applyTheme(THEMES[(i + 1) % THEMES.length][0]);
+};
+try { applyTheme(localStorage.getItem('theme')); } catch { applyTheme(); }
 
 window.addEventListener('hashchange', route);
 call('meta').then(m => { META = m; route(); });

@@ -10,14 +10,13 @@ use crate::db::{self, log, object, objects};
 use crate::{Error, Result, bail};
 
 pub const CATEGORIES: [&str; 6] = ["上衣", "褲/裙", "洋裝", "外套", "配件", "其他"];
-pub const CHANNELS: [&str; 3] = ["門市", "網路", "批發"];
 pub const PAYMENTS: [&str; 4] = ["現金", "信用卡", "轉帳", "行動支付"];
 pub const KINDS: [&str; 4] = ["盤點調整", "瑕疵報廢", "退回廠商", "其他"];
 
 /// 每筆明細對庫存的增減：銷貨為出庫，進貨與調整依數量正負。
 pub const EFFECT: &str = "(CASE d.type WHEN 'SO' THEN -l.qty ELSE l.qty END)";
 
-const VARIANT: &str = "SELECT v.id, v.sku, v.barcode, v.qty_on_hand, v.avg_cost, v.safety_stock, \
+const VARIANT: &str = "SELECT v.id, v.sku, v.qty_on_hand, v.avg_cost, v.safety_stock, \
     v.product_id, v.color_id, v.size_id, p.code product_code, p.name, p.list_price, p.image, \
     c.code color_code, c.name color, z.code size, z.sort size_sort, \
     (SELECT count(*) FROM line WHERE variant_id=v.id) used \
@@ -251,7 +250,7 @@ const PRODUCT_LABELS: [(&str, &str); 7] = [("name", "品名"), ("category", "類
 pub fn products(c: &Connection, q: &str) -> Result<Vec<Value>> {
     let q = q.trim();
     objects(c, &format!("{PRODUCT} WHERE ?1='' OR p.code LIKE ?2 OR p.name LIKE ?2 OR p.supplier_code LIKE ?2 \
-        OR EXISTS(SELECT 1 FROM variant x WHERE x.product_id=p.id AND (x.sku LIKE ?2 OR x.barcode=?1)) \
+        OR EXISTS(SELECT 1 FROM variant x WHERE x.product_id=p.id AND x.sku LIKE ?2) \
         ORDER BY p.code_date DESC, p.code_serial DESC LIMIT 300"), params![q, format!("%{q}%")])
 }
 
@@ -344,29 +343,28 @@ pub fn add_variants(c: &mut Connection, id: i64, colors: &[i64], sizes: &[i64]) 
     Ok(())
 }
 
-pub fn update_variant(c: &mut Connection, id: i64, barcode: &str, safety_stock: i64) -> Result<()> {
+pub fn update_variant(c: &mut Connection, id: i64, safety_stock: i64) -> Result<()> {
     if safety_stock < 0 {
         return bail("安全庫存不可為負數");
     }
     let tx = tx(c)?;
-    let old = object(&tx, "SELECT sku, barcode, safety_stock FROM variant WHERE id=?1", [id])?;
-    tx.execute("UPDATE variant SET barcode=?2, safety_stock=?3 WHERE id=?1", params![id, barcode.trim(), safety_stock])?;
-    let d = diff(&old, &json!({"barcode": barcode.trim(), "safety_stock": safety_stock}),
-        &[("barcode", "條碼"), ("safety_stock", "安全庫存")]);
-    if !d.is_empty() {
-        log(&tx, "修改 SKU", old["sku"].as_str().unwrap_or_default(), &d)?;
+    let (sku, old): (String, i64) =
+        tx.query_row("SELECT sku, safety_stock FROM variant WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    if old != safety_stock {
+        tx.execute("UPDATE variant SET safety_stock=?2 WHERE id=?1", params![id, safety_stock])?;
+        log(&tx, "修改 SKU", &sku, &format!("安全庫存：{old} → {safety_stock}"))?;
     }
     tx.commit()?;
     Ok(())
 }
 
-/// 掃碼/查詢：SKU 或條碼完全相符時回傳 variant；另依貨號或品名找商品（含各 SKU 庫存）。
+/// 查詢：SKU 完全相符時回傳 variant；另依貨號或品名找商品（含各 SKU 庫存）。
 pub fn find(c: &Connection, q: &str) -> Result<Value> {
     let q = q.trim();
     if q.is_empty() {
         return Ok(json!({"variant": null, "products": []}));
     }
-    let variant = objects(c, &format!("{VARIANT} WHERE v.sku=?1 COLLATE NOCASE OR (v.barcode<>'' AND v.barcode=?1)"), [q])?
+    let variant = objects(c, &format!("{VARIANT} WHERE v.sku=?1 COLLATE NOCASE"), [q])?
         .into_iter().next();
     let head = q.split('-').next().unwrap_or(q);
     let mut products = objects(c, &format!("{PRODUCT} WHERE p.code=?1 COLLATE NOCASE"), [head])?;
@@ -389,7 +387,6 @@ pub struct DocIn {
     pub doc_type: String,
     pub date: String,
     pub supplier_id: Option<i64>,
-    pub channel: String,
     pub payment: String,
     pub discount: i64,
     pub kind: String,
@@ -443,9 +440,6 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
             if d.supplier_id.is_none() {
                 return bail("請選擇廠商");
             }
-            if d.photos.is_empty() {
-                return bail("進貨單至少要附一張照片（例如廠商貨單或商品照）");
-            }
             if d.lines.iter().any(|l| l.qty <= 0) {
                 return bail("進貨數量必須大於 0");
             }
@@ -454,9 +448,6 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
             }
         }
         "SO" => {
-            if !CHANNELS.contains(&d.channel.as_str()) {
-                return bail("請選擇通路");
-            }
             if !PAYMENTS.contains(&d.payment.as_str()) {
                 return bail("請選擇付款方式");
             }
@@ -487,10 +478,9 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
     let tx = tx(c)?;
     let no = next_no(&tx, t, date)?;
     let (supplier_id, discount) = (if t == "PO" { d.supplier_id } else { None }, if t == "SO" { d.discount } else { 0 });
-    tx.execute("INSERT INTO doc(type, no, date, supplier_id, channel, payment, discount, kind, reason, note, created_at) \
-        VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        params![t, no, date.to_string(), supplier_id, if t == "SO" { &d.channel } else { "" },
-            if t == "SO" { &d.payment } else { "" }, discount, if t == "AJ" { &d.kind } else { "" },
+    tx.execute("INSERT INTO doc(type, no, date, supplier_id, payment, discount, kind, reason, note, created_at) \
+        VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![t, no, date.to_string(), supplier_id, if t == "SO" { &d.payment } else { "" }, discount, if t == "AJ" { &d.kind } else { "" },
             d.reason.trim(), d.note.trim(), db::now()])?;
     let doc_id = tx.last_insert_rowid();
 
@@ -526,7 +516,7 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
         "PO" => format!("廠商 {}；{pieces} 件；合計 {}；照片 {} 張",
             tx.query_row("SELECT name FROM supplier WHERE id=?1", [supplier_id], |r| r.get::<_, String>(0))?,
             money(total), d.photos.len()),
-        "SO" => format!("{}／{}；{pieces} 件；折扣 {}；實收 {}", d.channel, d.payment, money(discount), money(total - discount)),
+        "SO" => format!("{}；{pieces} 件；折扣 {}；實收 {}", d.payment, money(discount), money(total - discount)),
         _ => format!("{}：{}", d.kind, d.reason.trim()),
     };
     log(&tx, &format!("新增{}", doc_name(t)), &no, &format!("{head}；明細：{}", detail.join("、")))?;
@@ -609,7 +599,7 @@ pub struct DocFilter {
     pub q: String,
 }
 
-const DOC_LIST: &str = "SELECT d.id, d.type, d.no, d.date, d.status, d.channel, d.payment, d.kind, d.reason, d.note, \
+const DOC_LIST: &str = "SELECT d.id, d.type, d.no, d.date, d.status, d.payment, d.kind, d.reason, d.note, \
     d.void_reason, d.created_at, s.name supplier, \
     (SELECT count(*) FROM line WHERE doc_id=d.id) lines, \
     (SELECT coalesce(sum(qty), 0) FROM line WHERE doc_id=d.id) qty, \

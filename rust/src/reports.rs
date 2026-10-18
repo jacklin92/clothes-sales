@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Duration, NaiveDate};
 use rusqlite::{Connection, params};
-use rust_xlsxwriter::{ExcelDateTime, Format, Image, Workbook, Worksheet};
+use rust_xlsxwriter::{ExcelDateTime, Format, FormatAlign, FormatBorder, Formula, Image, Workbook, Worksheet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -57,9 +57,9 @@ pub fn build(c: &Connection, name: &str, p: &Params) -> Result<Report> {
                 FROM line l JOIN doc d ON d.id=l.doc_id JOIN supplier s ON s.id=d.supplier_id {JOIN_V} \
                 WHERE d.type='PO' AND d.status='posted' AND d.date BETWEEN ?1 AND ?2 ORDER BY d.date, d.no, l.id"), [&s, &e])?),
         "sales" => report("銷貨報表", format!("銷貨報表 {s} ~ {e}"),
-            &[("銷貨日期", Date), ("單號", Text), ("通路", Text), ("本店貨號", Text), ("品名", Text), ("顏色/尺寸", Text),
+            &[("銷貨日期", Date), ("單號", Text), ("付款方式", Text), ("本店貨號", Text), ("品名", Text), ("顏色/尺寸", Text),
               ("數量", Int), ("單價", Money), ("小計", Money), ("成本", Money), ("毛利", Money)],
-            rows(c, &format!("SELECT d.date, d.no, d.channel, p.code, p.name, c.name || '/' || z.code, l.qty, l.unit_price, \
+            rows(c, &format!("SELECT d.date, d.no, d.payment, p.code, p.name, c.name || '/' || z.code, l.qty, l.unit_price, \
                 l.qty * l.unit_price, l.qty * l.unit_cost, l.qty * (l.unit_price - l.unit_cost) \
                 FROM line l JOIN doc d ON d.id=l.doc_id {JOIN_V} \
                 WHERE d.type='SO' AND d.status='posted' AND d.date BETWEEN ?1 AND ?2 ORDER BY d.date, d.no, l.id"), [&s, &e])?),
@@ -198,6 +198,130 @@ pub fn export(c: &Connection, report_dir: &Path, media_dir: &Path, name: &str, p
     let path = report_dir.join(format!("{}_{}.xlsx", rep.label, db::today().format("%Y%m%d")));
     save(&mut wb, &path)?;
     db::log(c, "匯出報表", rep.label, &path.to_string_lossy())?;
+    Ok(path)
+}
+
+const SHOP: &str = "衣の鋪";
+const CLAUSE: &str = "***貸款未付清或票據未兌現償清之前，貨物之所有權仍歸屬本公司所有，買受人無異議，\
+    同意本公司無需經法律程序隨時可取回本貨品或代物清償。***";
+const MIN_ITEM_ROWS: usize = 7;
+
+/// 單張銷貨單，沿用店內紙本出貨單版型；小計與合計用公式，在 Excel 改數量會自動重算。
+pub fn export_sale(c: &Connection, dir: &Path, id: i64) -> Result<PathBuf> {
+    let d = crate::store::doc(c, id)?;
+    if d["type"] != "SO" {
+        return bail("只有銷貨單可以匯出");
+    }
+    let s = |k: &str| d[k].as_str().unwrap_or_default().to_string();
+    let lines = d["lines"].as_array().cloned().unwrap_or_default();
+    let no = s("no");
+
+    let mut wb = Workbook::new();
+    let ws = wb.add_worksheet();
+    ws.set_name("銷貨單")?;
+    let base = Format::new().set_font_size(12).set_align(FormatAlign::VerticalCenter);
+    let label = base.clone().set_align(FormatAlign::Right);
+    let field = base.clone().set_align(FormatAlign::Left).set_border_bottom(FormatBorder::Thin);
+    let cell = base.clone().set_align(FormatAlign::Center).set_border(FormatBorder::Thin);
+    let head = cell.clone().set_bold().set_background_color("#EFE6DA");
+    let text = cell.clone().set_align(FormatAlign::Left);
+    let money = cell.clone().set_align(FormatAlign::Right).set_num_format("#,##0");
+    let total = money.clone().set_bold().set_font_size(14);
+    let roc = field.clone().set_num_format("[$-404]e/mm/dd"); // 民國年，例 115/06/27
+
+    for (col, w) in [11, 12, 20, 11, 7, 7, 11, 11, 13].into_iter().enumerate() {
+        ws.set_column_width(col as u16, w)?;
+    }
+    ws.merge_range(0, 0, 0, 8, SHOP, &base.clone().set_font_size(22).set_bold().set_align(FormatAlign::Center))?;
+    ws.set_row_height(0, 36)?;
+    let title = if d["status"] == "void" { "銷 貨 單（已作廢）" } else { "銷 貨 單" };
+    ws.merge_range(1, 0, 1, 8, title, &base.clone().set_font_size(14).set_align(FormatAlign::Center))?;
+
+    ws.write_with_format(2, 0, "客戶名稱：", &label)?;
+    ws.merge_range(2, 1, 2, 2, "", &field)?;
+    ws.write_with_format(2, 3, "出貨日期：", &label)?;
+    ws.merge_range(2, 4, 2, 5, "", &roc)?;
+    ws.write_datetime_with_format(2, 4, ExcelDateTime::parse_from_str(&s("date"))?, &roc)?;
+    ws.write_with_format(2, 6, "貨單編號：", &label)?;
+    ws.merge_range(2, 7, 2, 8, &no, &field)?;
+    ws.write_with_format(3, 0, "電　　話：", &label)?;
+    ws.merge_range(3, 1, 3, 2, "", &field)?;
+    ws.write_with_format(3, 3, "地　　址：", &label)?;
+    ws.merge_range(3, 4, 3, 8, "", &field)?;
+    ws.write_with_format(4, 0, "收款方式：", &label)?;
+    ws.merge_range(4, 1, 4, 2, &s("payment"), &field)?;
+    ws.write_with_format(4, 3, "備　　註：", &label)?;
+    ws.merge_range(4, 4, 4, 8, &s("note"), &field)?;
+    for row in 2..=4 {
+        ws.set_row_height(row, 20)?;
+    }
+
+    for (col, h) in ["項次", "貨號", "品名", "顏色", "尺寸", "數量", "單價", "小計", "備註"].into_iter().enumerate() {
+        ws.write_with_format(5, col as u16, h, &head)?;
+    }
+    let first = 6u32;
+    let n = lines.len().max(MIN_ITEM_ROWS) as u32;
+    for i in 0..n {
+        let r = first + i;
+        ws.set_row_height(r, 20)?;
+        ws.write_with_format(r, 0, i + 1, &cell)?;
+        match lines.get(i as usize) {
+            Some(l) => {
+                let ls = |k: &str| l[k].as_str().unwrap_or_default().to_string();
+                let (qty, price) = (l["qty"].as_i64().unwrap_or(0), l["unit_price"].as_i64().unwrap_or(0));
+                ws.write_with_format(r, 1, ls("product_code"), &cell)?;
+                ws.write_with_format(r, 2, ls("name"), &text)?;
+                ws.write_with_format(r, 3, ls("color"), &cell)?;
+                ws.write_with_format(r, 4, ls("size"), &cell)?;
+                ws.write_with_format(r, 5, qty as f64, &cell)?;
+                ws.write_with_format(r, 6, price as f64 / 100.0, &money)?;
+                let f = Formula::new(format!("=F{0}*G{0}", r + 1)).set_result((qty * price / 100).to_string());
+                ws.write_formula_with_format(r, 7, f, &money)?;
+                ws.write_with_format(r, 8, if qty < 0 { "退貨" } else { "" }, &text)?;
+            }
+            None => {
+                for col in 1..=8 {
+                    ws.write_blank(r, col, &cell)?;
+                }
+            }
+        }
+    }
+
+    let t = first + n;
+    let (sub, pcs): (i64, i64) = lines.iter().fold((0, 0), |(a, b), l| {
+        (a + l["subtotal"].as_i64().unwrap_or(0), b + l["qty"].as_i64().unwrap_or(0))
+    });
+    let discount = d["discount"].as_i64().unwrap_or(0);
+    let (top, bottom) = (first + 1, t);
+    ws.merge_range(t, 0, t, 1, "經辦人", &cell)?;
+    ws.merge_range(t, 2, t, 4, "", &cell)?;
+    ws.merge_range(t, 5, t, 6, "銷貨總額", &cell)?;
+    ws.write_formula_with_format(t, 7, Formula::new(format!("=SUM(H{top}:H{bottom})")).set_result((sub / 100).to_string()), &money)?;
+    ws.write_blank(t, 8, &cell)?;
+    ws.merge_range(t + 1, 0, t + 1, 1, "合計件數", &cell)?;
+    ws.merge_range(t + 1, 2, t + 1, 4, "", &cell)?;
+    ws.write_formula_with_format(t + 1, 2, Formula::new(format!("=SUM(F{top}:F{bottom})")).set_result(pcs.to_string()), &cell)?;
+    ws.merge_range(t + 1, 5, t + 1, 6, "整單折扣", &cell)?;
+    ws.write_with_format(t + 1, 7, discount as f64 / 100.0, &money)?;
+    ws.write_blank(t + 1, 8, &cell)?;
+    ws.merge_range(t + 2, 0, t + 2, 4, "", &cell)?;
+    ws.merge_range(t + 2, 5, t + 2, 6, "總計", &head)?;
+    ws.write_formula_with_format(t + 2, 7, Formula::new(format!("=H{}-H{}", t + 1, t + 2))
+        .set_result(((sub - discount) / 100).to_string()), &total)?;
+    ws.write_blank(t + 2, 8, &cell)?;
+    for row in t..=t + 2 {
+        ws.set_row_height(row, 22)?;
+    }
+    ws.merge_range(t + 3, 0, t + 3, 8, CLAUSE, &cell.clone().set_font_size(10).set_text_wrap())?;
+    ws.set_row_height(t + 3, 34)?;
+
+    ws.set_paper_size(9); // A4
+    ws.set_print_fit_to_pages(1, 0);
+    ws.set_print_area(0, 0, t + 3, 8)?;
+
+    let path = dir.join("銷貨單").join(format!("{no}.xlsx"));
+    save(&mut wb, &path)?;
+    db::log(c, "匯出銷貨單", &no, &path.to_string_lossy())?;
     Ok(path)
 }
 

@@ -24,11 +24,20 @@
     <a href="#/reports" data-page="reports">報表</a>
     <a href="#/audit" data-page="audit">操作紀錄</a>
     <a href="#/help" data-page="help">使用說明</a>
-    <div class="foot">所有資料只存在這台電腦</div>
+    <div class="foot"><button class="btn small" id="theme-btn" type="button" title="切換背景主題"></button>
+      <p>所有資料只存在這台電腦</p></div>
   </nav>
   <main id="main" tabindex="-1"></main>
 </div>
 <div id="toasts" aria-live="polite"></div>
+<!-- 液態玻璃折射：以低頻雜訊位移按鈕背後的畫面 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.012 0.02" numOctaves="2" seed="11" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="18" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
 
 <template id="help-page">
 <header class="page-head"><div><h1>使用說明</h1><p class="muted">第一次使用請從「快速開始」照著做一遍</p></div></header>
@@ -47,8 +56,8 @@
   <ol>
     <li>到「<a href="#/suppliers">廠商</a>」新增常往來的廠商（代號、名稱即可）。</li>
     <li>到「<a href="#/specs">顏色與尺寸</a>」確認需要的顏色與尺寸；系統已預載 12 色、8 種尺寸。</li>
-    <li>貨到時開「<a href="#/purchase">進貨</a>」：選廠商、拍貨單照片、按「＋ 新商品建檔」建立商品並勾選顏色尺寸，再填每個顏色尺寸的數量與進貨單價，存檔後庫存就會增加。</li>
-    <li>有客人購買時開「<a href="#/sale">銷貨收銀</a>」：掃條碼或輸入貨號，確認數量後按「結帳」。</li>
+    <li>貨到時開「<a href="#/purchase">進貨</a>」：選廠商、按「＋ 新商品建檔」建立商品並勾選顏色尺寸，再填每個顏色尺寸的數量與進貨單價，存檔後庫存就會增加。</li>
+    <li>有客人購買時開「<a href="#/sale">銷貨收銀</a>」：輸入貨號或品名，確認數量後按「結帳」。</li>
     <li>每天打開「<a href="#/home">首頁</a>」看今日營業額、低庫存提醒，以及資料安全檢查是否都是綠燈。</li>
   </ol>
 </section>
@@ -56,8 +65,8 @@
 <section class="card help" id="help-sale">
   <h2>銷貨與退貨</h2>
   <ol>
-    <li>在搜尋框掃條碼，或輸入 SKU、本店貨號、品名後按 <kbd>Enter</kbd>。</li>
-    <li>SKU 或條碼完全相符時直接加入一件；重複掃同一件會自動把數量加 1。</li>
+    <li>在搜尋框輸入 SKU、本店貨號或品名後按 <kbd>Enter</kbd>。</li>
+    <li>輸入完整 SKU（例如 <kbd>4B7A695A9-BK-M</kbd>）時直接加入一件；重複輸入同一件會自動把數量加 1。</li>
     <li>輸入貨號或品名時，會跳出「顏色 × 尺寸」表格，在要賣的格子填數量後按「加入明細」。</li>
     <li>單價預設為商品的建議售價，可直接修改；整單折扣填在下方。</li>
     <li>按「結帳」會再顯示一次合計確認，確認後才會存檔。</li>
@@ -72,7 +81,7 @@
   <h2>進貨</h2>
   <ol>
     <li>選擇廠商；沒有的話按「＋ 新增廠商」直接建立。</li>
-    <li>按「選擇照片」附上貨單或商品照，<b>至少一張</b>，方便日後對帳。</li>
+    <li>需要的話按「選擇照片」附上貨單或商品照，方便日後對帳（可不附）。</li>
     <li>輸入貨號或品名找既有商品；新款按「＋ 新商品建檔」，存檔後會直接進入數量表格。</li>
     <li>在「顏色 × 尺寸」表格填各格數量，並填寫這批的進貨單價，按「加入明細」。</li>
     <li>缺少的顏色或尺寸，在表格下方按「加顏色／尺寸」補建 SKU。</li>
@@ -86,7 +95,6 @@
   <dl>
     <dt>本店貨號</dt><dd>建檔時自動產生：建檔日期加當日流水號，轉成 16 進位，例如 2026-10-17 第 1 款為 <kbd>4B7A695A9</kbd>。建立後不可修改。</dd>
     <dt>SKU</dt><dd>本店貨號-顏色代碼-尺寸代碼，例如 <kbd>4B7A695A9-BK-M</kbd>。在商品頁勾選顏色與尺寸即可一次產生。</dd>
-    <dt>條碼</dt><dd>若商品吊牌有條碼，可在商品頁的 SKU 表填入，之後收銀直接掃描。同一個條碼只能對應一個 SKU。</dd>
     <dt>安全庫存</dt><dd>庫存低於這個數字時，首頁與查庫存會以紅字提醒。填 0 表示不提醒。</dd>
   </dl>
   <p>商品與 SKU 只有在從未進出貨時才能刪除；已有單據的商品請保留，以免報表對不起來。</p>
@@ -129,7 +137,7 @@
 <section class="card help" id="help-safe">
   <h2>資料安全與備份</h2>
   <ul>
-    <li>所有資料存在程式旁邊的資料夾：<kbd>庫存資料.sqlite3</kbd>（資料庫）、<kbd>圖片</kbd>、<kbd>報表</kbd>、<kbd>備份</kbd>。首頁可按「開啟資料夾」。</li>
+    <li>所有資料存在首頁「資料位置」顯示的資料夾（安裝版為 <kbd>%LOCALAPPDATA%\服飾庫存系統-資料</kbd>）：<kbd>庫存資料.sqlite3</kbd>（資料庫）、<kbd>圖片</kbd>、<kbd>報表</kbd>、<kbd>備份</kbd>。首頁可按「開啟資料夾」。解除安裝或升級程式不會刪除這些資料。</li>
     <li>每次存檔都以交易方式寫入，存到一半斷電也不會只存一半。</li>
     <li>每天第一次開啟程式時自動備份資料庫到 <kbd>備份</kbd> 資料夾，保留最近 30 天。</li>
     <li>每次啟動都會檢查資料庫檔案；首頁的「庫存帳核對」會比對每個 SKU 的庫存與所有單據加總是否一致。若出現紅燈，按「重新核算」即可依單據重建庫存與成本。</li>
@@ -147,9 +155,9 @@
   <dl>
     <dt>存檔時出現紅色提示？</dt><dd>提示會直接說明原因（例如「庫存不足」、「請填寫進貨單價」），依提示修正後再存檔即可，資料不會被存一半。</dd>
     <dt>單據打錯了怎麼辦？</dt><dd>到單據查詢點開該單，按「作廢」並填原因，再重開一張。</dd>
-    <dt>掃條碼沒反應？</dt><dd>確認游標在搜尋框內、條碼槍設定為掃描後送出 Enter，以及商品頁的 SKU 已填入這個條碼。</dd>
+    <dt>找不到商品？</dt><dd>確認貨號沒有打錯；記不得貨號時可輸入品名的一部分，或到「商品」頁搜尋廠商貨號。</dd>
     <dt>畫面上的資料沒有更新？</dt><dd>切換到其他頁面再回來，或重新點選左側選單即可重新載入。</dd>
-    <dt>換電腦怎麼搬資料？</dt><dd>關閉程式後，把程式與整個資料夾一起複製到新電腦即可。</dd>
+    <dt>換電腦怎麼搬資料？</dt><dd>在新電腦安裝程式並開啟一次後關閉，再把舊電腦的整個資料夾內容（從首頁「開啟資料夾」找到）複製到新電腦的相同位置即可。</dd>
   </dl>
 </section>
 </template>

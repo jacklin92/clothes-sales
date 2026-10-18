@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c2023"/>
+      <stop offset=".55" stop-color="#4b5256"/>
+      <stop offset=".75" stop-color="#5f6669"/>
+      <stop offset="1" stop-color="#262a2d"/>
+    </linearGradient>
+    <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e9e7e0" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#e9e7e0" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#e9e7e0" stop-opacity="0"/>
+    </linearGradient>
+    <!-- 山頭淡、山腳濃，模擬墨暈 -->
+    <linearGradient id="far" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7b8387" stop-opacity=".75"/>
+      <stop offset="1" stop-color="#7b8387" stop-opacity=".1"/>
+    </linearGradient>
+    <linearGradient id="mid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b4246"/>
+      <stop offset="1" stop-color="#3b4246" stop-opacity=".3"/>
+    </linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15181a"/>
+      <stop offset="1" stop-color="#202427"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <circle cx="1250" cy="210" r="70" fill="#ecebe4" opacity=".28"/>
+
+  <!-- 遠峰 -->
+  <path fill="url(#far)" d="M0 600C80 560 120 420 190 380S260 470 300 500 380 330 460 300 560 470 600 520 700 400 760 360 860 300 920 330 1000 520 1060 560 1160 380 1240 340 1360 480 1420 520 1520 420 1600 430V700H0Z"/>
+  <rect y="480" width="1600" height="200" fill="url(#mist)"/>
+
+  <!-- 中景山 -->
+  <path fill="url(#mid)" d="M0 720C100 680 160 560 240 540S330 640 400 660 520 540 600 520 720 650 780 690 900 600 980 580 1100 680 1180 700 1300 590 1380 570 1520 660 1600 650V820H0Z"/>
+  <rect y="640" width="1600" height="180" fill="url(#mist)"/>
+
+  <!-- 水面與漣漪 -->
+  <g stroke="#d9d7cf" stroke-opacity=".12" stroke-width="2" fill="none" stroke-linecap="round">
+    <path d="M520 830H760"/><path d="M600 860H900"/><path d="M820 890H1020"/><path d="M1080 850H1240"/>
+  </g>
+  <!-- 孤舟 -->
+  <path fill="#15181a" opacity=".85" d="M930 812C960 822 1010 822 1040 812L1032 822H938Z"/>
+  <path stroke="#15181a" stroke-width="2" opacity=".85" d="M985 812V790"/>
+
+  <!-- 近景崖岸與松 -->
+  <path fill="url(#near)" d="M0 760C70 740 130 760 180 800S300 880 360 900 440 960 460 1000H0Z"/>
+  <path fill="url(#near)" d="M1600 700C1530 720 1470 760 1420 820S1320 920 1290 1000H1600Z"/>
+  <g fill="#15181a">
+    <path d="M120 760L100 700 140 712 118 660 156 676 140 620 176 650 172 600 200 652 214 610 222 664 250 640 236 700 268 690 246 736Z"/>
+    <path d="M1500 700L1480 640 1516 650 1498 600 1532 612 1520 560 1552 590 1554 540 1576 594 1600 580V700Z"/>
+  </g>
+</svg>

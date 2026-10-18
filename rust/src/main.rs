@@ -25,12 +25,20 @@ impl App {
     }
 }
 
-/// 資料放在 exe 旁邊（可用環境變數 SALES_DATA_DIR 指定）。
+/// 資料位置：環境變數 SALES_DATA_DIR ＞ exe 旁已有資料庫（免安裝版）＞ %LOCALAPPDATA%\服飾庫存系統-資料（安裝版）。
+/// 不放在程式資料夾，也不用 Tauri 的識別碼資料夾（解除安裝程式的「刪除應用程式資料」會清掉它），資料才不會被誤刪。
 fn data_dir() -> PathBuf {
-    std::env::var_os("SALES_DATA_DIR").map(PathBuf::from).unwrap_or_else(|| {
-        std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default()
-    })
+    if let Some(dir) = std::env::var_os("SALES_DATA_DIR") {
+        return dir.into();
+    }
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
+    if exe_dir.join(DB_FILE).exists() {
+        return exe_dir;
+    }
+    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("服飾庫存系統-資料")).unwrap_or(exe_dir)
 }
+
+const DB_FILE: &str = "庫存資料.sqlite3";
 
 fn explorer(arg: String) {
     use std::os::windows::process::CommandExt;
@@ -49,7 +57,7 @@ fn alert(msg: &str) {
 #[tauri::command(async)]
 fn meta(app: State<'_, App>) -> Result<Value> {
     Ok(json!({
-        "categories": store::CATEGORIES, "channels": store::CHANNELS, "payments": store::PAYMENTS, "kinds": store::KINDS,
+        "categories": store::CATEGORIES, "payments": store::PAYMENTS, "kinds": store::KINDS,
         "dir": app.dir.to_string_lossy(), "status": app.status,
     }))
 }
@@ -115,8 +123,8 @@ fn add_variants(app: State<'_, App>, id: i64, colors: Vec<i64>, sizes: Vec<i64>)
 }
 
 #[tauri::command(async)]
-fn update_variant(app: State<'_, App>, id: i64, barcode: String, safety: i64) -> Result<()> {
-    store::update_variant(&mut app.db(), id, &barcode, safety)
+fn update_variant(app: State<'_, App>, id: i64, safety: i64) -> Result<()> {
+    store::update_variant(&mut app.db(), id, safety)
 }
 
 #[tauri::command(async)]
@@ -172,6 +180,13 @@ fn export_three(app: State<'_, App>) -> Result<String> {
 }
 
 #[tauri::command(async)]
+fn export_sale(app: State<'_, App>, id: i64) -> Result<String> {
+    let path = reports::export_sale(&app.db(), &app.reports(), id)?;
+    explorer(format!("/select,\"{}\"", path.display()));
+    Ok(path.to_string_lossy().into())
+}
+
+#[tauri::command(async)]
 fn audit(app: State<'_, App>, q: String) -> Result<Vec<Value>> {
     store::audit(&app.db(), &q)
 }
@@ -195,7 +210,7 @@ fn open_folder(app: State<'_, App>, which: String) -> Result<()> {
 
 fn start(dir: &Path) -> Result<(Connection, Value)> {
     std::fs::create_dir_all(dir)?;
-    let c = db::open(&dir.join("庫存資料.sqlite3"))?;
+    let c = db::open(&dir.join(DB_FILE))?;
     let check: String = c.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
     let backup = db::backup(&c, &dir.join("備份"))?;
     Ok((c, json!({"quick_check": check, "backup": backup})))
@@ -229,7 +244,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             meta, dashboard, suppliers, save_supplier, colors, sizes, save_color, save_size, delete_item,
             products, product, save_product, add_variants, update_variant, find, save_image,
-            create_doc, docs, doc, void_doc, report, export_report, export_three, audit, recalc_all, open_folder,
+            create_doc, docs, doc, void_doc, report, export_report, export_three, export_sale, audit, recalc_all, open_folder,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| alert(&format!("系統發生錯誤：{e}")));
