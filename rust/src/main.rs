@@ -45,13 +45,36 @@ fn explorer(arg: String) {
     let _ = std::process::Command::new("explorer").raw_arg(arg).spawn();
 }
 
-fn alert(msg: &str) {
+fn message_box(msg: &str, kind: u32) -> i32 {
     #[link(name = "user32")]
     unsafe extern "system" {
         fn MessageBoxW(hwnd: *mut std::ffi::c_void, text: *const u16, caption: *const u16, kind: u32) -> i32;
     }
     let w = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
-    unsafe { MessageBoxW(std::ptr::null_mut(), w(msg).as_ptr(), w("服飾庫存系統").as_ptr(), 0x10) };
+    unsafe { MessageBoxW(std::ptr::null_mut(), w(msg).as_ptr(), w("服飾庫存系統").as_ptr(), kind) }
+}
+
+fn alert(msg: &str) {
+    message_box(msg, 0x10);
+}
+
+/// 啟動時到 GitHub Release 檢查新版；使用者同意後下載、安裝並重新啟動。
+/// 檢查失敗（離線等）一律靜默略過，不影響正常使用。
+async fn check_update(app: tauri::AppHandle) {
+    use tauri_plugin_updater::UpdaterExt;
+    let Ok(Some(update)) = async { app.updater()?.check().await }.await else { return };
+    let ask = format!("有新版 v{}（目前 v{}），要現在更新嗎？
+
+更新時程式會關閉，安裝完成後自動重新開啟，資料不受影響。", update.version, update.current_version);
+    if message_box(&ask, 0x24 | 0x40000) != 6 {
+        return;
+    }
+    match update.download_and_install(|_, _| {}, || {}).await {
+        Ok(()) => app.restart(),
+        Err(e) => alert(&format!("更新失敗，可稍後重開程式再試，或到 GitHub 下載安裝檔。
+
+{e}")),
+    }
 }
 
 #[tauri::command(async)]
@@ -262,6 +285,11 @@ fn main() {
     };
     let media_dir = dir.join("圖片");
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            tauri::async_runtime::spawn(check_update(app.handle().clone()));
+            Ok(())
+        })
         .manage(App { db: Mutex::new(conn), dir, status })
         // 商品圖與進貨照片：http://media.localhost/<相對路徑>
         .register_uri_scheme_protocol("media", move |_ctx, req| {

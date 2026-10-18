@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "服飾庫存系統",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "identifier": "tw.local.clothes-stock",
   "build": {
     "frontendDist": "ui"
@@ -23,15 +23,33 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
     "publisher": "衣の鋪",
     "shortDescription": "服飾店進銷存系統",
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["TradChinese"],
+        "languages": [
+          "TradChinese"
+        ],
         "installerIcon": "icons/icon.ico"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1NTlCNzVCRjU0ODMzOTkKUldTWk0wajFXN2RaWlQ1QjBrTXd6MWk1V0ZtRUpvcWJYTHpiREpwSmJnTmJ4Q2g5MUJwTTZodGsK",
+      "endpoints": [
+        "https://github.com/jacklin92/clothes-sales/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }
