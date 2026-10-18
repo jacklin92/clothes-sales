@@ -82,6 +82,13 @@ pub fn build(c: &Connection, name: &str, p: &Params) -> Result<Report> {
                 FROM line l JOIN doc d ON d.id=l.doc_id {JOIN_V} \
                 WHERE d.type='SO' AND d.status='posted' AND d.date BETWEEN ?1 AND ?2 \
                 GROUP BY p.id ORDER BY q DESC LIMIT 50"), [&s, &e])?),
+        "monthly" => monthly(c)?,
+        "history" => report("歷史銷貨", format!("歷史銷貨 {s} ~ {e}"),
+            &[("日期", Date), ("單號", Text), ("客戶", Text), ("貨號", Text), ("品名", Text), ("規格", Text),
+              ("數量", Int), ("單價", Money), ("小計", Money), ("備註", Text), ("來源檔案", Text)],
+            rows(c, "SELECT h.date, h.no, h.customer_name, l.code, l.name, l.spec, l.qty, l.unit_price, l.subtotal, l.note, h.source \
+                FROM history_line l JOIN history_doc h ON h.id=l.history_id WHERE h.date BETWEEN ?1 AND ?2 \
+                ORDER BY h.date, h.id, l.id", [&s, &e])?),
         _ => return bail("未知的報表"),
     })
 }
@@ -115,7 +122,7 @@ fn quarterly(c: &Connection, today: NaiveDate) -> Result<Report> {
     use Kind::*;
     let mut r = report("季度收益", "季度收益".into(),
         &[("季度", Text), ("進貨成本", Money), ("銷貨總額", Money), ("銷貨成本", Money), ("毛利", Money), ("毛利率", Text),
-          ("期初庫存", Money), ("期末庫存", Money), ("週轉率", Text)], vec![]);
+          ("期初庫存", Money), ("期末庫存", Money), ("週轉率", Text), ("營業稅", Money)], vec![]);
     let first: Option<String> = c.query_row("SELECT min(date) FROM doc WHERE status='posted'", [], |r| r.get(0))?;
     let Some(first) = first else { return Ok(r) };
     let mut q = quarter_start(db::parse_date(&first)?);
@@ -129,6 +136,7 @@ fn quarterly(c: &Connection, today: NaiveDate) -> Result<Report> {
         let gross = line_sum("SO", "l.qty * l.unit_price")?;
         let cogs = line_sum("SO", "l.qty * l.unit_cost")?;
         let discount = sum("SELECT coalesce(sum(discount), 0) FROM doc WHERE type='SO' AND status='posted' AND date BETWEEN ?1 AND ?2", &a, &b)?;
+        let tax = sum("SELECT coalesce(sum(tax), 0) FROM doc WHERE type='SO' AND status='posted' AND date BETWEEN ?1 AND ?2", &a, &b)?;
         let revenue = gross - discount;
         let opening = inventory_value(c, q - Duration::days(1))?;
         let closing = inventory_value(c, end)?;
@@ -139,10 +147,32 @@ fn quarterly(c: &Connection, today: NaiveDate) -> Result<Report> {
             if revenue != 0 { format!("{:.1}%", (revenue - cogs) as f64 * 100.0 / revenue as f64) } else { "-".into() }.into(),
             opening.into(), closing.into(),
             if avg_inv > 0.0 { format!("{:.2}", cogs as f64 / avg_inv) } else { "-".into() }.into(),
+            tax.into(),
         ]);
         q = next_quarter(q);
     }
     Ok(r)
+}
+
+/// 每月營業額：系統銷貨（未稅淨額）＋匯入的歷史銷貨。
+fn monthly(c: &Connection) -> Result<Report> {
+    use Kind::*;
+    let mut months: std::collections::BTreeMap<String, [i64; 4]> = Default::default();
+    for r in rows(c, "SELECT substr(date, 1, 7), sum(net), sum(tax) FROM (SELECT d.date, d.tax, \
+        (SELECT coalesce(sum(qty * unit_price), 0) FROM line WHERE doc_id=d.id) - d.discount net \
+        FROM doc d WHERE d.type='SO' AND d.status='posted') GROUP BY 1", [])? {
+        let m = months.entry(r[0].as_str().unwrap_or_default().into()).or_default();
+        m[0] = r[1].as_i64().unwrap_or(0);
+        m[1] = r[2].as_i64().unwrap_or(0);
+    }
+    for r in rows(c, "SELECT substr(date, 1, 7), sum(subtotal), sum(tax) FROM history_doc GROUP BY 1", [])? {
+        let m = months.entry(r[0].as_str().unwrap_or_default().into()).or_default();
+        m[2] = r[1].as_i64().unwrap_or(0);
+        m[3] = r[2].as_i64().unwrap_or(0);
+    }
+    Ok(report("月營業額", "月營業額（未稅，含匯入的歷史銷貨）".into(),
+        &[("月份", Text), ("系統銷貨", Money), ("系統營業稅", Money), ("歷史銷貨", Money), ("歷史營業稅", Money), ("營業額合計", Money)],
+        months.into_iter().rev().map(|(m, v)| vec![m.into(), v[0].into(), v[1].into(), v[2].into(), v[3].into(), (v[0] + v[2]).into()]).collect()))
 }
 
 /// 對應系統規劃.xlsx 的三個工作表（全部期間）。
@@ -238,16 +268,16 @@ pub fn export_sale(c: &Connection, dir: &Path, id: i64) -> Result<PathBuf> {
     ws.merge_range(1, 0, 1, 8, title, &base.clone().set_font_size(14).set_align(FormatAlign::Center))?;
 
     ws.write_with_format(2, 0, "客戶名稱：", &label)?;
-    ws.merge_range(2, 1, 2, 2, "", &field)?;
+    ws.merge_range(2, 1, 2, 2, &s("customer_name"), &field)?;
     ws.write_with_format(2, 3, "出貨日期：", &label)?;
     ws.merge_range(2, 4, 2, 5, "", &roc)?;
     ws.write_datetime_with_format(2, 4, ExcelDateTime::parse_from_str(&s("date"))?, &roc)?;
     ws.write_with_format(2, 6, "貨單編號：", &label)?;
     ws.merge_range(2, 7, 2, 8, &no, &field)?;
     ws.write_with_format(3, 0, "電　　話：", &label)?;
-    ws.merge_range(3, 1, 3, 2, "", &field)?;
+    ws.merge_range(3, 1, 3, 2, &s("customer_phone"), &field)?;
     ws.write_with_format(3, 3, "地　　址：", &label)?;
-    ws.merge_range(3, 4, 3, 8, "", &field)?;
+    ws.merge_range(3, 4, 3, 8, &s("customer_address"), &field)?;
     ws.write_with_format(4, 0, "收款方式：", &label)?;
     ws.merge_range(4, 1, 4, 2, &s("payment"), &field)?;
     ws.write_with_format(4, 3, "備　　註：", &label)?;
@@ -275,7 +305,7 @@ pub fn export_sale(c: &Connection, dir: &Path, id: i64) -> Result<PathBuf> {
                 ws.write_with_format(r, 4, ls("size"), &cell)?;
                 ws.write_with_format(r, 5, qty as f64, &cell)?;
                 ws.write_with_format(r, 6, price as f64 / 100.0, &money)?;
-                let f = Formula::new(format!("=F{0}*G{0}", r + 1)).set_result((qty * price / 100).to_string());
+                let f = Formula::new(format!("=F{0}*G{0}", r + 1)).set_result((qty as f64 * price as f64 / 100.0).to_string());
                 ws.write_formula_with_format(r, 7, f, &money)?;
                 ws.write_with_format(r, 8, if qty < 0 { "退貨" } else { "" }, &text)?;
             }
@@ -291,33 +321,42 @@ pub fn export_sale(c: &Connection, dir: &Path, id: i64) -> Result<PathBuf> {
     let (sub, pcs): (i64, i64) = lines.iter().fold((0, 0), |(a, b), l| {
         (a + l["subtotal"].as_i64().unwrap_or(0), b + l["qty"].as_i64().unwrap_or(0))
     });
-    let discount = d["discount"].as_i64().unwrap_or(0);
+    let (discount, tax) = (d["discount"].as_i64().unwrap_or(0), d["tax"].as_i64().unwrap_or(0));
+    let tax_type = s("tax_type");
     let (top, bottom) = (first + 1, t);
-    ws.merge_range(t, 0, t, 1, "經辦人", &cell)?;
+    let (r_sub, r_disc, r_tax) = (t + 1, t + 2, t + 3); // Excel 列號（從 1 起算）
+    let result = |cents: i64| (cents as f64 / 100.0).to_string();
+    ws.merge_range(t, 0, t, 1, "合計件數", &cell)?;
     ws.merge_range(t, 2, t, 4, "", &cell)?;
+    ws.write_formula_with_format(t, 2, Formula::new(format!("=SUM(F{top}:F{bottom})")).set_result(pcs.to_string()), &cell)?;
     ws.merge_range(t, 5, t, 6, "銷貨總額", &cell)?;
-    ws.write_formula_with_format(t, 7, Formula::new(format!("=SUM(H{top}:H{bottom})")).set_result((sub / 100).to_string()), &money)?;
+    ws.write_formula_with_format(t, 7, Formula::new(format!("=SUM(H{top}:H{bottom})")).set_result(result(sub)), &money)?;
     ws.write_blank(t, 8, &cell)?;
-    ws.merge_range(t + 1, 0, t + 1, 1, "合計件數", &cell)?;
-    ws.merge_range(t + 1, 2, t + 1, 4, "", &cell)?;
-    ws.write_formula_with_format(t + 1, 2, Formula::new(format!("=SUM(F{top}:F{bottom})")).set_result(pcs.to_string()), &cell)?;
+    ws.merge_range(t + 1, 0, t + 1, 1, "課稅別", &cell)?;
+    ws.merge_range(t + 1, 2, t + 1, 4, &tax_type, &cell)?;
     ws.merge_range(t + 1, 5, t + 1, 6, "整單折扣", &cell)?;
     ws.write_with_format(t + 1, 7, discount as f64 / 100.0, &money)?;
     ws.write_blank(t + 1, 8, &cell)?;
     ws.merge_range(t + 2, 0, t + 2, 4, "", &cell)?;
-    ws.merge_range(t + 2, 5, t + 2, 6, "總計", &head)?;
-    ws.write_formula_with_format(t + 2, 7, Formula::new(format!("=H{}-H{}", t + 1, t + 2))
-        .set_result(((sub - discount) / 100).to_string()), &total)?;
+    ws.merge_range(t + 2, 5, t + 2, 6, "營業稅", &cell)?;
+    // 應稅以公式計算 5%（四捨五入到元），在 Excel 改數量也會跟著變；零稅率、免稅為 0
+    let tax_formula = if tax_type == "應稅" { format!("=ROUND((H{r_sub}-H{r_disc})*5%,0)") } else { "=0".into() };
+    ws.write_formula_with_format(t + 2, 7, Formula::new(tax_formula).set_result(result(tax)), &money)?;
     ws.write_blank(t + 2, 8, &cell)?;
-    for row in t..=t + 2 {
+    ws.merge_range(t + 3, 0, t + 3, 4, "", &cell)?;
+    ws.merge_range(t + 3, 5, t + 3, 6, "總計", &head)?;
+    ws.write_formula_with_format(t + 3, 7, Formula::new(format!("=H{r_sub}-H{r_disc}+H{r_tax}"))
+        .set_result(result(sub - discount + tax)), &total)?;
+    ws.write_blank(t + 3, 8, &cell)?;
+    for row in t..=t + 3 {
         ws.set_row_height(row, 22)?;
     }
-    ws.merge_range(t + 3, 0, t + 3, 8, CLAUSE, &cell.clone().set_font_size(10).set_text_wrap())?;
-    ws.set_row_height(t + 3, 34)?;
+    ws.merge_range(t + 4, 0, t + 4, 8, CLAUSE, &cell.clone().set_font_size(10).set_text_wrap())?;
+    ws.set_row_height(t + 4, 34)?;
 
     ws.set_paper_size(9); // A4
     ws.set_print_fit_to_pages(1, 0);
-    ws.set_print_area(0, 0, t + 3, 8)?;
+    ws.set_print_area(0, 0, t + 4, 8)?;
 
     let path = dir.join("銷貨單").join(format!("{no}.xlsx"));
     save(&mut wb, &path)?;

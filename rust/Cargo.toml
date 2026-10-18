@@ -1,6 +1,6 @@
 [package]
 name = "clothes-stock"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [lib]
@@ -17,6 +17,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
 rust_xlsxwriter = "0.100"
+calamine = { version = "0.36", features = ["dates"] }
 
 [profile.release]
 strip = true

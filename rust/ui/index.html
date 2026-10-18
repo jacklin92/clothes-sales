@@ -17,6 +17,7 @@
     <hr>
     <a href="#/lookup" data-page="lookup">查庫存</a>
     <a href="#/docs" data-page="docs">單據查詢</a>
+    <a href="#/history" data-page="history">歷史銷貨</a>
     <a href="#/products" data-page="products">商品</a>
     <a href="#/suppliers" data-page="suppliers">廠商</a>
     <a href="#/specs" data-page="specs">顏色與尺寸</a>
@@ -46,6 +47,7 @@
     <a class="tag" href="#help-start">快速開始</a><a class="tag" href="#help-sale">銷貨與退貨</a>
     <a class="tag" href="#help-purchase">進貨</a><a class="tag" href="#help-product">商品與 SKU</a>
     <a class="tag" href="#help-adjust">庫存調整與盤點</a><a class="tag" href="#help-docs">單據與作廢</a>
+    <a class="tag" href="#help-history">歷史銷貨匯入</a>
     <a class="tag" href="#help-report">報表</a><a class="tag" href="#help-safe">資料安全與備份</a>
     <a class="tag" href="#help-faq">常見問題</a>
   </div>
@@ -60,6 +62,7 @@
     <li>有客人購買時開「<a href="#/sale">銷貨收銀</a>」：輸入貨號或品名，確認數量後按「結帳」。</li>
     <li>每天打開「<a href="#/home">首頁</a>」看今日營業額、低庫存提醒，以及資料安全檢查是否都是綠燈。</li>
   </ol>
+  <p class="muted">剛開始使用、店裡已經有庫存時：先到「<a href="#/adjust">庫存調整</a>」選「期初庫存」輸入現有數量與成本；舊的 Excel 銷貨單可到「<a href="#/history">歷史銷貨</a>」匯入。</p>
 </section>
 
 <section class="card help" id="help-sale">
@@ -71,6 +74,14 @@
     <li>單價預設為商品的建議售價，可直接修改；整單折扣填在下方。</li>
     <li>按「結帳」會再顯示一次合計確認，確認後才會存檔。</li>
   </ol>
+  <h3>課稅別與營業稅</h3>
+  <ul>
+    <li><b>應稅</b>：另加 5% 營業稅，以（小計 − 折扣）計算，四捨五入到元。</li>
+    <li><b>零稅率</b>、<b>免稅</b>：不加稅。</li>
+    <li>報表中的營業額、毛利一律以<b>未稅</b>金額計算；單據與出貨單上的「總計」為含稅金額。</li>
+  </ul>
+  <h3>客戶資料與出貨單</h3>
+  <p>展開「客戶資料」可填客戶名稱、電話、地址（選填）。到「單據查詢」點開銷貨單，按「匯出銷貨單 Excel」即可產生店內版型的出貨單，客戶資料與營業稅會自動帶入。</p>
   <h3>客人退貨</h3>
   <p>同樣開一張銷貨單，把該商品的數量改成負數（例如 <kbd>-1</kbd>），存檔後庫存會加回去、金額為負數。</p>
   <h3>庫存不足</h3>
@@ -105,6 +116,7 @@
   <ul>
     <li><b>盤點調整</b>：輸入「實際盤點數量」，系統自動算出差異。</li>
     <li><b>瑕疵報廢、退回廠商</b>：輸入減少的件數（填正數即可）。</li>
+    <li><b>期初庫存</b>：開始使用系統時，輸入店裡現有的庫存。搜尋商品後在顏色 × 尺寸表格填數量與單位成本，可一次加入多個商品；成本會納入平均成本計算。</li>
     <li><b>其他</b>：增加填正數、減少填負數。</li>
   </ul>
   <p>每次調整都必須填寫原因，並保留在單據與操作紀錄中。</p>
@@ -120,12 +132,25 @@
   </ul>
 </section>
 
+<section class="card help" id="help-history">
+  <h2>歷史銷貨匯入</h2>
+  <ol>
+    <li>到「<a href="#/history">歷史銷貨</a>」按「匯入 Excel 銷貨單」，可一次選多個檔案。</li>
+    <li>店內原本的出貨單版型與本系統匯出的銷貨單都能讀取；一個檔案有多個工作表時，每個工作表當作一張單。</li>
+    <li>系統依表頭「品名、數量、單價、小計」找欄位，並讀取出貨日期（可用民國年，例 <kbd>115/06/27</kbd>）、貨單編號、客戶名稱、電話、地址、銷貨總額、營業稅、總計。</li>
+    <li>同一個貨單編號只會匯入一次；沒有日期或是空白的單會略過，並列出原因。</li>
+  </ol>
+  <p>歷史銷貨<b>只做紀錄</b>，不會扣庫存，也不計入毛利；會出現在「月營業額」與「歷史銷貨」報表。匯錯的檔案可點開後刪除，刪除會寫進操作紀錄。</p>
+</section>
+
 <section class="card help" id="help-report">
   <h2>報表</h2>
   <dl>
     <dt>即時庫存表</dt><dd>每個 SKU 的庫存、平均成本、庫存金額與低庫存警示。</dd>
     <dt>進貨／銷貨報表</dt><dd>選擇日期區間，列出每一筆明細；銷貨報表含成本與毛利。</dd>
-    <dt>季度收益</dt><dd>每季的進貨成本、銷貨淨額、銷貨成本、毛利率與庫存週轉率。</dd>
+    <dt>季度收益</dt><dd>每季的進貨成本、銷貨淨額（未稅）、銷貨成本、毛利率、庫存週轉率與營業稅。</dd>
+    <dt>月營業額</dt><dd>每月的系統銷貨與匯入的歷史銷貨（未稅），以及各自的營業稅。</dd>
+    <dt>歷史銷貨</dt><dd>區間內匯入的歷史銷貨單明細。</dd>
     <dt>滯銷品</dt><dd>指定天數內沒有賣出、但仍有庫存的 SKU。</dd>
     <dt>熱銷排行</dt><dd>區間內銷量前 50 名的商品。</dd>
   </dl>

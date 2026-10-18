@@ -1,4 +1,5 @@
 pub mod db;
+pub mod history;
 pub mod media;
 pub mod reports;
 pub mod store;

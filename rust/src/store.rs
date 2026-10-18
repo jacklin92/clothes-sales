@@ -11,7 +11,14 @@ use crate::{Error, Result, bail};
 
 pub const CATEGORIES: [&str; 6] = ["上衣", "褲/裙", "洋裝", "外套", "配件", "其他"];
 pub const PAYMENTS: [&str; 4] = ["現金", "信用卡", "轉帳", "行動支付"];
-pub const KINDS: [&str; 4] = ["盤點調整", "瑕疵報廢", "退回廠商", "其他"];
+pub const KINDS: [&str; 5] = ["盤點調整", "瑕疵報廢", "退回廠商", "期初庫存", "其他"];
+pub const OPENING: &str = "期初庫存";
+pub const TAX_TYPES: [&str; 3] = ["應稅", "零稅率", "免稅"];
+
+/// 營業稅 5%，四捨五入到元（金額以分計）。退貨為負數時對稱處理。
+pub fn sales_tax(net: i64) -> i64 {
+    div_round(net * 5, 10_000) * 100
+}
 
 /// 每筆明細對庫存的增減：銷貨為出庫，進貨與調整依數量正負。
 pub const EFFECT: &str = "(CASE d.type WHEN 'SO' THEN -l.qty ELSE l.qty END)";
@@ -389,6 +396,10 @@ pub struct DocIn {
     pub supplier_id: Option<i64>,
     pub payment: String,
     pub discount: i64,
+    pub tax_type: String,
+    pub customer_name: String,
+    pub customer_phone: String,
+    pub customer_address: String,
     pub kind: String,
     pub reason: String,
     pub note: String,
@@ -451,6 +462,9 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
             if !PAYMENTS.contains(&d.payment.as_str()) {
                 return bail("請選擇付款方式");
             }
+            if !TAX_TYPES.contains(&d.tax_type.as_str()) {
+                return bail("請選擇課稅別");
+            }
             if d.discount < 0 {
                 return bail("折扣不可為負數");
             }
@@ -465,7 +479,11 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
             if d.reason.trim().is_empty() {
                 return bail("請填寫調整原因");
             }
-            if d.lines.len() != 1 || d.lines[0].qty == 0 {
+            if d.kind == OPENING {
+                if d.lines.iter().any(|l| l.qty <= 0 || l.unit_price.is_none()) {
+                    return bail("期初庫存每一筆都要填大於 0 的數量與單位成本");
+                }
+            } else if d.lines.len() != 1 || d.lines[0].qty == 0 {
                 return bail("請選擇一個 SKU，並填寫不為 0 的調整數量");
             }
         }
@@ -476,14 +494,9 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
     }
 
     let tx = tx(c)?;
-    let no = next_no(&tx, t, date)?;
-    let (supplier_id, discount) = (if t == "PO" { d.supplier_id } else { None }, if t == "SO" { d.discount } else { 0 });
-    tx.execute("INSERT INTO doc(type, no, date, supplier_id, payment, discount, kind, reason, note, created_at) \
-        VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        params![t, no, date.to_string(), supplier_id, if t == "SO" { &d.payment } else { "" }, discount, if t == "AJ" { &d.kind } else { "" },
-            d.reason.trim(), d.note.trim(), db::now()])?;
-    let doc_id = tx.last_insert_rowid();
-
+    // 先查出每筆明細的單價，算出金額與稅額，單據寫入後就不能再改
+    let opening = t == "AJ" && d.kind == OPENING;
+    let mut rows = vec![];
     let mut change: BTreeMap<i64, i64> = BTreeMap::new();
     let mut info: BTreeMap<i64, (String, String, i64)> = BTreeMap::new();
     let (mut detail, mut total, mut pieces) = (vec![], 0i64, 0i64);
@@ -492,14 +505,30 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
             "SELECT v.sku, p.name, p.list_price, v.qty_on_hand FROM variant v JOIN product p ON p.id=v.product_id WHERE v.id=?1",
             [l.variant_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .optional()?.ok_or_else(|| Error("找不到明細中的 SKU，可能已被刪除，請重新加入".into()))?;
-        let price = if t == "AJ" { 0 } else { l.unit_price.unwrap_or(list_price) };
-        tx.execute("INSERT INTO line(doc_id, variant_id, qty, unit_price) VALUES(?1, ?2, ?3, ?4)",
-            params![doc_id, l.variant_id, l.qty, price])?;
+        // 調整單只有期初庫存記單位成本，其餘以當下平均成本計
+        let price = if t == "AJ" && !opening { 0 } else { l.unit_price.unwrap_or(list_price) };
+        rows.push((l.variant_id, l.qty, price));
         *change.entry(l.variant_id).or_default() += if t == "SO" { -l.qty } else { l.qty };
-        detail.push(if t == "AJ" { format!("{sku} {name} {:+}", l.qty) } else { format!("{sku} {name} ×{} @{}", l.qty, money(price)) });
+        detail.push(if t == "AJ" && !opening { format!("{sku} {name} {:+}", l.qty) } else { format!("{sku} {name} ×{} @{}", l.qty, money(price)) });
         info.insert(l.variant_id, (sku, name, on_hand));
         total += l.qty * price;
         pieces += l.qty;
+    }
+    let (supplier_id, discount) = (if t == "PO" { d.supplier_id } else { None }, if t == "SO" { d.discount } else { 0 });
+    let tax = if t == "SO" && d.tax_type == "應稅" { sales_tax(total - discount) } else { 0 };
+    let so = |s: &str| if t == "SO" { s.trim().to_string() } else { String::new() };
+
+    let no = next_no(&tx, t, date)?;
+    tx.execute("INSERT INTO doc(type, no, date, supplier_id, payment, discount, kind, reason, note, created_at, \
+        tax_type, tax, customer_name, customer_phone, customer_address) \
+        VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+        params![t, no, date.to_string(), supplier_id, so(&d.payment), discount, if t == "AJ" { &d.kind } else { "" },
+            d.reason.trim(), d.note.trim(), db::now(), so(&d.tax_type), tax,
+            so(&d.customer_name), so(&d.customer_phone), so(&d.customer_address)])?;
+    let doc_id = tx.last_insert_rowid();
+    for (variant_id, qty, price) in rows {
+        tx.execute("INSERT INTO line(doc_id, variant_id, qty, unit_price) VALUES(?1, ?2, ?3, ?4)",
+            params![doc_id, variant_id, qty, price])?;
     }
     for (vid, delta) in &change {
         let (sku, name, on_hand) = &info[vid];
@@ -516,7 +545,10 @@ pub fn create_doc(c: &mut Connection, d: DocIn) -> Result<String> {
         "PO" => format!("廠商 {}；{pieces} 件；合計 {}；照片 {} 張",
             tx.query_row("SELECT name FROM supplier WHERE id=?1", [supplier_id], |r| r.get::<_, String>(0))?,
             money(total), d.photos.len()),
-        "SO" => format!("{}；{pieces} 件；折扣 {}；實收 {}", d.payment, money(discount), money(total - discount)),
+        "SO" => format!("{}{}；{pieces} 件；折扣 {}；{} 稅額 {}；總計 {}",
+            if d.customer_name.trim().is_empty() { String::new() } else { format!("客戶 {}；", d.customer_name.trim()) },
+            d.payment, money(discount), d.tax_type, money(tax), money(total - discount + tax)),
+        _ if opening => format!("{}：{}；{pieces} 件；成本合計 {}", d.kind, d.reason.trim(), money(total)),
         _ => format!("{}：{}", d.kind, d.reason.trim()),
     };
     log(&tx, &format!("新增{}", doc_name(t)), &no, &format!("{head}；明細：{}", detail.join("、")))?;
@@ -575,7 +607,8 @@ pub fn recalc(tx: &Connection, variant_id: i64) -> Result<()> {
     let mut up = tx.prepare_cached("UPDATE line SET unit_cost=?2, balance_qty=?3, balance_value=?4 WHERE id=?1")?;
     for m in moves {
         let (id, eff, price) = (m[0].as_i64().unwrap_or(0), m[2].as_i64().unwrap_or(0), m[3].as_i64().unwrap_or(0));
-        let cost = if m[1] == "PO" { price } else { avg }; // 銷貨、退貨、調整都以當下平均成本計
+        // 進貨與期初庫存用單據上的成本（其他調整單價一律存 0）；銷貨、退貨、調整以當下平均成本計
+        let cost = if m[1] == "PO" || (m[1] == "AJ" && price > 0) { price } else { avg };
         qty += eff;
         value += eff * cost;
         if qty <= 0 {
@@ -600,10 +633,10 @@ pub struct DocFilter {
 }
 
 const DOC_LIST: &str = "SELECT d.id, d.type, d.no, d.date, d.status, d.payment, d.kind, d.reason, d.note, \
-    d.void_reason, d.created_at, s.name supplier, \
+    d.void_reason, d.created_at, d.tax_type, d.tax, d.customer_name, s.name supplier, \
     (SELECT count(*) FROM line WHERE doc_id=d.id) lines, \
     (SELECT coalesce(sum(qty), 0) FROM line WHERE doc_id=d.id) qty, \
-    (SELECT coalesce(sum(qty * unit_price), 0) FROM line WHERE doc_id=d.id) - d.discount total, \
+    (SELECT coalesce(sum(qty * unit_price), 0) FROM line WHERE doc_id=d.id) - d.discount + d.tax total, \
     (SELECT image FROM photo WHERE doc_id=d.id ORDER BY id LIMIT 1) photo \
     FROM doc d LEFT JOIN supplier s ON s.id=d.supplier_id";
 
@@ -611,7 +644,7 @@ pub fn docs(c: &Connection, f: DocFilter) -> Result<Vec<Value>> {
     let q = f.q.trim();
     let start = if f.start.is_empty() { "0000-00-00" } else { &f.start };
     let end = if f.end.is_empty() { "9999-99-99" } else { &f.end };
-    objects(c, &format!("{DOC_LIST} WHERE (?1='' OR d.type=?1) AND d.date BETWEEN ?2 AND ?3 AND (?4='' OR d.no LIKE ?5 \
+    objects(c, &format!("{DOC_LIST} WHERE (?1='' OR d.type=?1) AND d.date BETWEEN ?2 AND ?3 AND (?4='' OR d.no LIKE ?5 OR d.customer_name LIKE ?5 \
         OR EXISTS(SELECT 1 FROM line l JOIN variant v ON v.id=l.variant_id JOIN product p ON p.id=v.product_id \
         WHERE l.doc_id=d.id AND (v.sku LIKE ?5 OR p.code LIKE ?5 OR p.name LIKE ?5))) \
         ORDER BY d.date DESC, d.no DESC LIMIT 500"),

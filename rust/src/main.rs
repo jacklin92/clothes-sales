@@ -2,7 +2,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
-use clothes_stock::{Result, bail, db, media, reports, store};
+use clothes_stock::{Result, bail, db, history, media, reports, store};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use tauri::State;
@@ -57,7 +57,7 @@ fn alert(msg: &str) {
 #[tauri::command(async)]
 fn meta(app: State<'_, App>) -> Result<Value> {
     Ok(json!({
-        "categories": store::CATEGORIES, "payments": store::PAYMENTS, "kinds": store::KINDS,
+        "categories": store::CATEGORIES, "payments": store::PAYMENTS, "kinds": store::KINDS, "tax_types": store::TAX_TYPES,
         "dir": app.dir.to_string_lossy(), "status": app.status,
     }))
 }
@@ -186,6 +186,41 @@ fn export_sale(app: State<'_, App>, id: i64) -> Result<String> {
     Ok(path.to_string_lossy().into())
 }
 
+/// 前端以原始位元組上傳 Excel，標頭 x-name 為 encodeURIComponent 後的檔名。
+#[tauri::command(async)]
+fn import_history(app: State<'_, App>, request: tauri::ipc::Request<'_>) -> Result<Value> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return bail("檔案上傳格式錯誤") };
+    let name = request.headers().get("x-name").and_then(|v| v.to_str().ok()).map(percent_decode).unwrap_or_default();
+    history::import(&mut app.db(), &name, bytes)
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let (mut out, mut i) = (Vec::with_capacity(b.len()), 0);
+    while i < b.len() {
+        match (b[i], b.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(std::str::from_utf8(h).ok()?, 16).ok())) {
+            (b'%', Some(v)) => { out.push(v); i += 3; }
+            (c, _) => { out.push(c); i += 1; }
+        }
+    }
+    String::from_utf8_lossy(&out).into()
+}
+
+#[tauri::command(async)]
+fn histories(app: State<'_, App>, start: String, end: String, q: String) -> Result<Vec<Value>> {
+    history::list(&app.db(), &start, &end, &q)
+}
+
+#[tauri::command(async)]
+fn history_doc(app: State<'_, App>, id: i64) -> Result<Value> {
+    history::get(&app.db(), id)
+}
+
+#[tauri::command(async)]
+fn delete_history(app: State<'_, App>, id: i64) -> Result<()> {
+    history::delete(&mut app.db(), id)
+}
+
 #[tauri::command(async)]
 fn audit(app: State<'_, App>, q: String) -> Result<Vec<Value>> {
     store::audit(&app.db(), &q)
@@ -244,7 +279,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             meta, dashboard, suppliers, save_supplier, colors, sizes, save_color, save_size, delete_item,
             products, product, save_product, add_variants, update_variant, find, save_image,
-            create_doc, docs, doc, void_doc, report, export_report, export_three, export_sale, audit, recalc_all, open_folder,
+            create_doc, docs, doc, void_doc, report, export_report, export_three, export_sale, import_history, histories, history_doc, delete_history, audit, recalc_all, open_folder,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| alert(&format!("系統發生錯誤：{e}")));

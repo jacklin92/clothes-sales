@@ -93,6 +93,32 @@ CREATE TRIGGER IF NOT EXISTS size_code_locked BEFORE UPDATE OF code ON size
   BEGIN SELECT RAISE(ABORT, '尺寸代碼建立後不可修改'); END;
 "#;
 
+/// v2：課稅別、營業稅、客戶資料；匯入的歷史銷貨單（只做紀錄，不影響庫存）。
+const MIGRATE_V2: &str = r#"
+ALTER TABLE doc ADD COLUMN tax_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE doc ADD COLUMN tax INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE doc ADD COLUMN customer_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE doc ADD COLUMN customer_phone TEXT NOT NULL DEFAULT '';
+ALTER TABLE doc ADD COLUMN customer_address TEXT NOT NULL DEFAULT '';
+DROP TRIGGER IF EXISTS doc_locked;
+CREATE TRIGGER doc_locked BEFORE UPDATE OF
+  type, no, date, supplier_id, payment, discount, kind, reason, note, created_at,
+  tax_type, tax, customer_name, customer_phone, customer_address ON doc
+  BEGIN SELECT RAISE(ABORT, '單據建立後不可修改，打錯請作廢後重開'); END;
+CREATE TABLE history_doc(
+  id INTEGER PRIMARY KEY,
+  key TEXT NOT NULL UNIQUE, source TEXT NOT NULL, no TEXT NOT NULL DEFAULT '', date TEXT NOT NULL,
+  customer_name TEXT NOT NULL DEFAULT '', customer_phone TEXT NOT NULL DEFAULT '', customer_address TEXT NOT NULL DEFAULT '',
+  subtotal INTEGER NOT NULL DEFAULT 0, tax INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+  imported_at TEXT NOT NULL);
+CREATE INDEX history_date ON history_doc(date);
+CREATE TABLE history_line(
+  id INTEGER PRIMARY KEY, history_id INTEGER NOT NULL REFERENCES history_doc(id),
+  code TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', spec TEXT NOT NULL DEFAULT '',
+  qty INTEGER NOT NULL DEFAULT 0, unit_price INTEGER NOT NULL DEFAULT 0, subtotal INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '');
+"#;
+
 const COLORS: [(&str, &str); 12] = [
     ("BK", "黑"), ("WH", "白"), ("GY", "灰"), ("NV", "深藍"), ("BL", "藍"), ("BE", "米"),
     ("KH", "卡其"), ("BR", "咖啡"), ("RD", "紅"), ("PK", "粉"), ("GN", "綠"), ("YL", "黃"),
@@ -118,6 +144,13 @@ pub fn open(path: &Path) -> Result<Connection> {
         }
         tx.pragma_update(None, "user_version", 1)?;
         log(&tx, "建立資料庫", "", "預載 12 種顏色、8 種尺寸")?;
+        tx.commit()?;
+    }
+    if ver < 2 {
+        let tx = c.unchecked_transaction()?;
+        tx.execute_batch(MIGRATE_V2)?;
+        tx.pragma_update(None, "user_version", 2)?;
+        log(&tx, "升級資料庫", "v2", "新增課稅別、營業稅、客戶資料與歷史銷貨")?;
         tx.commit()?;
     }
     Ok(c)

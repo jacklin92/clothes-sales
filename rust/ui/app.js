@@ -98,7 +98,7 @@ function stat(label, value, sub) {
 
 function docSummary(d) {
   if (d.type === 'PO') return esc(d.supplier);
-  if (d.type === 'SO') return esc(d.payment);
+  if (d.type === 'SO') return esc([d.customer_name, d.payment, d.tax_type].filter(Boolean).join('・'));
   return esc(`${d.kind}：${d.reason}`);
 }
 
@@ -168,8 +168,10 @@ function matrixTable(p, render) {
 
 const stockCell = v => `<td class="${v.qty_on_hand < v.safety_stock ? 'low' : v.qty_on_hand ? '' : 'zero'}" title="${esc(v.sku)}">${v.qty_on_hand}</td>`;
 
-/** mode: sale｜purchase 回傳 [{variant, qty, price}]；pick 回傳單一 variant */
+/** mode: sale｜purchase｜opening（期初庫存）回傳 [{variant, qty, price}]；pick 回傳單一 variant */
 function pickMatrix(product, mode) {
+  const incoming = mode === 'purchase' || mode === 'opening';
+  const priceLabel = { sale: '售價', purchase: '進貨單價', opening: '單位成本' }[mode];
   return new Promise(resolve => {
     let p = product;
     const d = modal('', true);
@@ -182,9 +184,9 @@ function pickMatrix(product, mode) {
       d.innerHTML = `<h2>${esc(p.code)} ${esc(p.name)}</h2>
         <p class="muted">${mode === 'pick' ? '點選要調整的顏色尺寸' : '在格子裡填數量，空白表示不加入'}</p>
         <div class="dlg-body">${body}
-        ${mode === 'pick' ? '' : `<div class="row" style="margin-top:14px"><label>${mode === 'sale' ? '售價' : '進貨單價 *'}
+        ${mode === 'pick' ? '' : `<div class="row" style="margin-top:14px"><label>${priceLabel}${incoming ? ' *' : ''}
           <input type="number" id="m-price" min="0" step="1" value="${mode === 'sale' ? dollars(p.list_price) : (drafts.lastCost?.[p.id] ?? '')}"></label>
-          ${mode === 'purchase' ? '<button class="btn small" id="m-add" style="align-self:flex-end">＋ 加顏色／尺寸</button>' : ''}</div>`}
+          ${incoming ? '<button class="btn small" id="m-add" style="align-self:flex-end">＋ 加顏色／尺寸</button>' : ''}</div>`}
         <div id="m-addbox"></div></div>
         <p class="err"></p>
         <div class="actions"><button class="btn" id="m-cancel">取消</button>${mode === 'pick' ? '' : '<button class="btn primary" id="m-ok">加入明細</button>'}</div>`;
@@ -200,9 +202,9 @@ function pickMatrix(product, mode) {
         const err = $('.err', d);
         if (!lines.length) return err.textContent = '請至少在一格填入數量';
         if (lines.some(l => !Number.isInteger(l.qty))) return err.textContent = '數量必須是整數';
-        if (mode === 'purchase' && lines.some(l => l.qty < 0)) return err.textContent = '進貨數量不可為負數';
-        if (isNaN(cents(price)) || cents(price) < 0) return err.textContent = mode === 'sale' ? '請填寫售價' : '請填寫進貨單價';
-        if (mode === 'purchase') (drafts.lastCost ??= {})[p.id] = price;
+        if (incoming && lines.some(l => l.qty < 0)) return err.textContent = '數量不可為負數';
+        if (isNaN(cents(price)) || cents(price) < 0) return err.textContent = `請填寫${priceLabel}`;
+        if (incoming) (drafts.lastCost ??= {})[p.id] = price;
         result = lines;
         d.close();
       };
@@ -328,20 +330,22 @@ async function showDoc(id) {
   const total = d.lines.reduce((a, l) => a + l.subtotal, 0);
   const info = [
     ['日期', d.date], ['類型', TYPE[d.type]],
-    d.type === 'PO' && ['廠商', d.supplier], d.type === 'SO' && ['付款', d.payment],
+    d.type === 'PO' && ['廠商', d.supplier], d.type === 'SO' && ['付款', d.payment], d.type === 'SO' && ['課稅別', d.tax_type],
+    d.customer_name && ['客戶', d.customer_name], d.customer_phone && ['電話', d.customer_phone], d.customer_address && ['地址', d.customer_address],
     d.type === 'AJ' && ['類型', d.kind], d.type === 'AJ' && ['原因', d.reason],
     d.note && ['備註', d.note], ['建檔時間', d.created_at],
     isVoid && ['作廢時間', d.voided_at], isVoid && ['作廢原因', d.void_reason],
   ].filter(Boolean);
-  const heads = d.type === 'AJ' ? ['', 'SKU', '品名', '規格', ['數量', 'num']]
-    : ['', 'SKU', '品名', '規格', ['數量', 'num'], ['單價', 'num'], ['小計', 'num']];
+  const priced = d.type !== 'AJ' || d.kind === '期初庫存';
+  const heads = priced ? ['', 'SKU', '品名', '規格', ['數量', 'num'], [d.type === 'AJ' ? '單位成本' : '單價', 'num'], ['小計', 'num']]
+    : ['', 'SKU', '品名', '規格', ['數量', 'num']];
   const rows = d.lines.map(l => [img(l.image), esc(l.sku), esc(l.name), esc(`${l.color}/${l.size}`), l.qty,
-    ...(d.type === 'AJ' ? [] : [money(l.unit_price), money(l.subtotal)])]);
+    ...(priced ? [money(l.unit_price), money(l.subtotal)] : [])]);
   const dlg = modal(`<h2>${TYPE[d.type]}單 ${esc(d.no)} ${isVoid ? '<span class="tag void">已作廢</span>' : ''}</h2>
     <div class="dlg-body"><p class="kv">${info.map(([k, v]) => `<span>${k}：<b>${esc(v)}</b></span>`).join('')}</p>
     ${d.photos.length ? `<div class="photos">${d.photos.map(p => `<div class="ph"><img src="${MEDIA}${esc(p.image)}" data-photo="${esc(p.image)}" alt=""></div>`).join('')}</div>` : ''}
     ${table(heads, rows)}
-    ${d.type === 'AJ' ? '' : `<p style="text-align:right">${d.discount ? `小計 ${money(total)}　折扣 ${money(d.discount)}　` : ''}<b class="big-total">${money(total - d.discount)}</b></p>`}
+    ${!priced ? '' : `<p style="text-align:right">${d.discount || d.tax ? `小計 ${money(total)}　` : ''}${d.discount ? `折扣 ${money(d.discount)}　` : ''}${d.tax ? `營業稅 ${money(d.tax)}　` : ''}<b class="big-total">${money(total - d.discount + d.tax)}</b></p>`}
     </div><div class="actions">${isVoid ? '' : '<button class="btn danger" id="dd-void" style="margin-right:auto">作廢這張單據</button>'}
     ${d.type === 'SO' ? '<button class="btn" id="dd-export">匯出銷貨單 Excel</button>' : ''}<button class="btn" id="dd-close">關閉</button></div>`, true);
   $('#dd-close', dlg).onclick = () => dlg.close();
@@ -396,14 +400,24 @@ PAGES.home = async main => {
 
 // ---- 銷貨 ----
 PAGES.sale = async main => {
-  const s = drafts.sale ??= { date: today(), payment: META.payments[0], discount: '', note: '', lines: [] };
+  const s = drafts.sale ??= { date: today(), payment: META.payments[0], tax_type: META.tax_types[0], discount: '', note: '',
+    customer_name: '', customer_phone: '', customer_address: '', lines: [] };
   main.innerHTML = head('銷貨收銀', '輸入貨號、SKU 或品名後按 Enter。客人退貨：把數量改成負數。',
       '<button class="btn small" id="s-clear">清空重來</button>') + `
     <section class="card"><div class="toolbar">
       <label>日期<input type="date" id="s-date" value="${s.date}" max="${today()}"></label>
       <label>付款方式<select id="s-payment">${options(META.payments, s.payment)}</select></label>
+      <label>課稅別<select id="s-tax_type">${options(META.tax_types, s.tax_type)}</select></label>
       ${scanBox('s-scan', '輸入貨號、SKU 或品名')}
-    </div></section>
+    </div>
+    <details class="customer" ${s.customer_name || s.customer_phone || s.customer_address ? 'open' : ''}>
+      <summary>客戶資料（選填，會印在出貨單上）</summary>
+      <div class="toolbar">
+        <label>客戶名稱<input id="s-customer_name" value="${esc(s.customer_name)}"></label>
+        <label>電話<input id="s-customer_phone" value="${esc(s.customer_phone)}"></label>
+        <label class="grow">地址<input id="s-customer_address" value="${esc(s.customer_address)}" style="width:100%"></label>
+      </div>
+    </details></section>
     <section class="card"><h2>銷貨明細</h2><div id="s-lines"></div></section>
     <div class="checkout">
       <label>整單折扣<input type="number" id="s-discount" min="0" step="1" value="${esc(s.discount)}" placeholder="0"></label>
@@ -411,7 +425,8 @@ PAGES.sale = async main => {
       <div class="total"><span id="s-count"></span><b id="s-total"></b></div>
       <button class="btn primary big" id="s-submit">結帳</button>
     </div>`;
-  for (const k of ['date', 'payment', 'discount', 'note']) $(`#s-${k}`).oninput = e => { s[k] = e.target.value; saleTotals(); };
+  for (const k of ['date', 'payment', 'tax_type', 'discount', 'note', 'customer_name', 'customer_phone', 'customer_address'])
+    $(`#s-${k}`).oninput = e => { s[k] = e.target.value; saleTotals(); };
   $('#s-clear').onclick = async () => {
     if (s.lines.length && !await confirmBox('清空銷貨單', '目前的明細會全部清除，確定嗎？', '清空', true)) return;
     drafts.sale = null; route();
@@ -456,8 +471,14 @@ function saleTotals() {
   s.lines.forEach((l, i) => { const el = $(`[data-sub="${i}"]`); if (el) el.textContent = money(l.qty * (cents(l.price) || 0)); });
   const sub = s.lines.reduce((a, l) => a + (+l.qty || 0) * (cents(l.price) || 0), 0);
   const pcs = s.lines.reduce((a, l) => a + (+l.qty || 0), 0);
-  $('#s-count').textContent = `${s.lines.length} 項・${pcs} 件${s.discount ? `・小計 ${money(sub)}` : ''}`;
-  $('#s-total').textContent = money(sub - (cents(s.discount) || 0));
+  const net = sub - (cents(s.discount) || 0), tax = taxOf(net, s.tax_type);
+  $('#s-count').textContent = `${s.lines.length} 項・${pcs} 件・未稅 ${money(net)}・營業稅 ${money(tax)}（${s.tax_type}）`;
+  $('#s-total').textContent = money(net + tax);
+}
+
+/** 與後端相同：應稅 5%，四捨五入到元 */
+function taxOf(net, type) {
+  return type === '應稅' ? Math.sign(net) * Math.round(Math.abs(net) * 5 / 10000) * 100 : 0;
 }
 
 async function submitSale() {
@@ -469,13 +490,16 @@ async function submitSale() {
   if (badPrice) return toast(`${badPrice.variant.sku} 的單價不正確`, 'error');
   const discount = cents(s.discount) || 0;
   if (discount < 0) return toast('折扣不可為負數', 'error');
-  const total = s.lines.reduce((a, l) => a + l.qty * cents(l.price), 0) - discount;
+  const net = s.lines.reduce((a, l) => a + l.qty * cents(l.price), 0) - discount;
+  const tax = taxOf(net, s.tax_type), total = net + tax;
   const pcs = s.lines.reduce((a, l) => a + l.qty, 0);
   const returns = s.lines.filter(l => l.qty < 0).length;
-  if (!await confirmBox('確認結帳', `<p>${esc(s.payment)}・${s.lines.length} 項・${pcs} 件
-      ${returns ? `<br><span class="red">含 ${returns} 項退貨</span>` : ''}${discount ? `<br>折扣 ${money(discount)}` : ''}</p>
+  if (!await confirmBox('確認結帳', `<p>${s.customer_name ? `${esc(s.customer_name)}・` : ''}${esc(s.payment)}・${s.lines.length} 項・${pcs} 件
+      ${returns ? `<br><span class="red">含 ${returns} 項退貨</span>` : ''}${discount ? `<br>折扣 ${money(discount)}` : ''}
+      <br>未稅 ${money(net)}・營業稅 ${money(tax)}（${esc(s.tax_type)}）</p>
       <p class="big-total">${money(total)}</p>`, '確認結帳')) return;
-  const no = await call('create_doc', { input: { type: 'SO', date: s.date, payment: s.payment, discount, note: s.note,
+  const no = await call('create_doc', { input: { type: 'SO', date: s.date, payment: s.payment, tax_type: s.tax_type, discount, note: s.note,
+    customer_name: s.customer_name, customer_phone: s.customer_phone, customer_address: s.customer_address,
     lines: s.lines.map(l => ({ variant_id: l.variant.id, qty: l.qty, unit_price: cents(l.price) })) } });
   toast(`已建立銷貨單 ${no}，實收 ${money(total)}`);
   drafts.sale = null;
@@ -581,8 +605,9 @@ async function submitPurchase() {
 
 // ---- 庫存調整 ----
 PAGES.adjust = async main => {
-  const a = drafts.adjust ??= { date: today(), kind: META.kinds[0], variant: null, qty: '', counted: '', reason: '', note: '' };
-  main.innerHTML = head('庫存調整', '盤點差異、瑕疵報廢、退回廠商時使用。每次調整都要填寫原因。') + `
+  const a = drafts.adjust ??= { date: today(), kind: META.kinds[0], variant: null, qty: '', counted: '', reason: '', note: '', lines: [] };
+  const opening = () => a.kind === '期初庫存';
+  main.innerHTML = head('庫存調整', '盤點差異、瑕疵報廢、退回廠商、開始使用時的期初庫存。每次調整都要填寫原因。') + `
     <section class="card"><h2>1. 選擇商品</h2>${scanBox('a-scan', '輸入貨號、SKU 或品名')}<div id="a-sel" style="margin-top:14px"></div></section>
     <section class="card"><h2>2. 調整內容</h2><div class="toolbar">
       <label>類型<select id="a-kind">${options(META.kinds, a.kind)}</select></label>
@@ -593,7 +618,17 @@ PAGES.adjust = async main => {
     </div><p id="a-preview" class="hint"></p></section>
     <div class="checkout"><div class="total"><span>調整後庫存</span><b id="a-after">-</b></div><button class="btn primary big" id="a-submit">存檔調整</button></div>`;
   const select = v => { a.variant = v; render(); };
-  bindScan('a-scan', { onVariant: select, onProduct: async p => { const v = await pickMatrix(p, 'pick'); if (v) select(v); } });
+  const addOpening = async p => {
+    for (const l of await pickMatrix(p, 'opening') || []) {
+      const ex = a.lines.find(x => x.variant.id === l.variant.id);
+      if (ex) Object.assign(ex, { qty: ex.qty + l.qty, price: l.price }); else a.lines.push(l);
+    }
+    render();
+  };
+  bindScan('a-scan', {
+    onVariant: async v => opening() ? addOpening(await call('product', { id: v.product_id })) : select(v),
+    onProduct: async p => { if (opening()) return addOpening(p); const v = await pickMatrix(p, 'pick'); if (v) select(v); },
+  });
   const delta = () => {
     if (!a.variant) return NaN;
     if (a.kind === '盤點調整') return a.counted === '' ? NaN : +a.counted - a.variant.qty_on_hand;
@@ -606,6 +641,7 @@ PAGES.adjust = async main => {
     $('#a-preview').textContent = a.variant && !isNaN(d) ? `本次調整 ${d > 0 ? '+' : ''}${d} 件` : '';
   };
   const render = () => {
+    if (opening()) return renderOpening();
     const v = a.variant;
     $('#a-sel').innerHTML = v ? `<div class="row">${img(v.image)}<div><b>${esc(v.sku)}</b> ${esc(v.name)}<br>
       <span class="muted">${esc(v.color)}/${esc(v.size)}・目前庫存 <b>${v.qty_on_hand}</b> 件</span></div>
@@ -620,11 +656,44 @@ PAGES.adjust = async main => {
     $('#a-qty')?.addEventListener('input', e => { a.qty = e.target.value; preview(); });
     preview();
   };
+  // 期初庫存：可一次輸入多個 SKU 的數量與單位成本（成本會納入平均成本）
+  const renderOpening = () => {
+    $('#a-qtybox').innerHTML = '';
+    $('#a-sel').innerHTML = table(['SKU', '品名', '規格', ['目前庫存', 'num'], ['數量', 'num'], ['單位成本', 'num'], ['小計', 'num'], ''],
+      a.lines.map((l, i) => [`<b>${esc(l.variant.sku)}</b>`, esc(l.variant.name), esc(`${l.variant.color}/${l.variant.size}`), l.variant.qty_on_hand,
+        `<input type="number" min="1" step="1" data-i="${i}" data-f="qty" value="${l.qty}" aria-label="數量">`,
+        `<input type="number" min="0" step="1" data-i="${i}" data-f="price" value="${esc(l.price)}" aria-label="單位成本">`,
+        money(l.qty * (cents(l.price) || 0)), `<button class="icon-btn" data-del="${i}" title="移除">×</button>`]),
+      '期初庫存：搜尋商品後，在顏色 × 尺寸表格填數量與單位成本，可一次加入多個商品。');
+    $$('#a-sel input[data-i]').forEach(inp => inp.onchange = () => {
+      const l = a.lines[inp.dataset.i];
+      l[inp.dataset.f] = inp.dataset.f === 'qty' ? +inp.value : inp.value;
+      renderOpening();
+    });
+    $$('#a-sel [data-del]').forEach(b => b.onclick = () => { a.lines.splice(b.dataset.del, 1); renderOpening(); });
+    const pcs = a.lines.reduce((s, l) => s + l.qty, 0), cost = a.lines.reduce((s, l) => s + l.qty * (cents(l.price) || 0), 0);
+    $('#a-after').textContent = `${pcs} 件`;
+    $('#a-preview').textContent = a.lines.length ? `共 ${a.lines.length} 項・${pcs} 件・成本合計 ${money(cost)}` : '';
+  };
   $('#a-kind').onchange = e => { a.kind = e.target.value; render(); };
   $('#a-date').oninput = e => a.date = e.target.value;
   $('#a-reason').oninput = e => a.reason = e.target.value;
   $('#a-note').oninput = e => a.note = e.target.value;
   $('#a-submit').onclick = async () => {
+    if (opening()) {
+      if (!a.lines.length) return toast('請先加入商品', 'error');
+      if (a.lines.some(l => !Number.isInteger(l.qty) || l.qty <= 0)) return toast('數量必須是大於 0 的整數', 'error');
+      if (a.lines.some(l => isNaN(cents(l.price)) || cents(l.price) < 0)) return toast('請填寫正確的單位成本', 'error');
+      if (!a.reason.trim()) return toast('請填寫原因，例如「系統開始使用」', 'error');
+      const cost = a.lines.reduce((s, l) => s + l.qty * cents(l.price), 0);
+      if (!await confirmBox('確認期初庫存', `<p>${a.lines.length} 項・${a.lines.reduce((s, l) => s + l.qty, 0)} 件</p>
+          <p class="big-total">成本 ${money(cost)}</p><p class="muted">存檔後不可修改，打錯只能作廢重開。</p>`, '確認存檔')) return;
+      const no = await call('create_doc', { input: { type: 'AJ', date: a.date, kind: a.kind, reason: a.reason, note: a.note,
+        lines: a.lines.map(l => ({ variant_id: l.variant.id, qty: l.qty, unit_price: cents(l.price) })) } });
+      toast(`已建立期初庫存 ${no}`);
+      drafts.adjust = null;
+      return route();
+    }
     const d = delta();
     if (!a.variant) return toast('請先選擇商品', 'error');
     if (isNaN(d) || !Number.isInteger(d)) return toast('請填寫整數數量', 'error');
@@ -679,6 +748,68 @@ PAGES.docs = async (main, arg) => {
   $('#d-q').oninput = debounce(e => { f.q = e.target.value; load(); });
   await load();
 };
+
+// ---- 歷史銷貨（匯入的舊 Excel 銷貨單，只做紀錄，不影響庫存）----
+PAGES.history = async main => {
+  const f = drafts.historyFilter ??= { start: '', end: '', q: '' };
+  main.innerHTML = head('歷史銷貨', '匯入舊的 Excel 銷貨單，只做紀錄與營業額統計，不影響庫存',
+      '<label class="btn primary">匯入 Excel 銷貨單<input type="file" id="h-file" accept=".xlsx,.xls,.xlsm" multiple hidden></label>') + `
+    <section class="card"><div class="toolbar">
+      <label>起<input type="date" id="h-start" value="${f.start}"></label><label>迄<input type="date" id="h-end" value="${f.end}"></label>
+      <label class="grow">關鍵字<input type="search" id="h-q" value="${esc(f.q)}" placeholder="單號、客戶、品名、檔名" style="width:100%"></label>
+    </div><p class="hint">一個檔案可以有多個工作表，每個工作表一張銷貨單。系統依「品名、數量、單價、小計」表頭找欄位，日期可用民國年（例 115/06/27）。同一個單號不會重複匯入。</p></section>
+    <section class="card" id="h-out"></section>`;
+  const load = async () => {
+    const list = await call('histories', f);
+    const sum = list.reduce((s, h) => s + h.total, 0);
+    $('#h-out').innerHTML = `<p class="muted">共 ${list.length} 張・總計 ${money(sum)}</p>` +
+      table(['日期', '單號', '客戶', ['品項', 'num'], ['件數', 'num'], ['銷貨總額', 'num'], ['營業稅', 'num'], ['總計', 'num'], '來源檔案'],
+        list.map(h => ({ attrs: `data-hist="${h.id}" data-href=""`, cells: [esc(h.date), `<b>${esc(h.no || '-')}</b>`, esc(h.customer_name || '-'),
+          h.lines, h.qty, money(h.subtotal), money(h.tax), money(h.total), `<span class="muted">${esc(h.source)}</span>`] })),
+        '還沒有匯入任何歷史銷貨單');
+    $$('[data-hist]').forEach(tr => tr.onclick = () => showHistory(+tr.dataset.hist));
+  };
+  $('#h-start').onchange = e => { f.start = e.target.value; load(); };
+  $('#h-end').onchange = e => { f.end = e.target.value; load(); };
+  $('#h-q').oninput = debounce(e => { f.q = e.target.value; load(); });
+  $('#h-file').onchange = async e => {
+    const done = [], skipped = [];
+    for (const file of e.target.files) {
+      try {
+        const r = await invoke('import_history', new Uint8Array(await file.arrayBuffer()), { headers: { 'x-name': encodeURIComponent(file.name) } });
+        done.push(...r.imported); skipped.push(...r.skipped);
+      } catch (err) { skipped.push(String(err)); }
+    }
+    e.target.value = '';
+    const d = modal(`<h2>匯入結果</h2><div class="dlg-body">
+      <p><b>成功匯入 ${done.length} 張</b></p>${done.length ? `<ul>${done.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${skipped.length ? `<p class="err">略過 ${skipped.length} 項</p><ul>${skipped.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      </div><div class="actions"><button class="btn primary">確定</button></div>`);
+    $('.btn', d).onclick = () => d.close();
+    load();
+  };
+  await load();
+};
+
+async function showHistory(id) {
+  const h = await call('history_doc', { id });
+  const d = modal(`<h2>歷史銷貨 ${esc(h.no || '')}</h2><div class="dlg-body">
+    <p class="kv"><span>日期：<b>${esc(h.date)}</b></span>${h.customer_name ? `<span>客戶：<b>${esc(h.customer_name)}</b></span>` : ''}
+      ${h.customer_phone ? `<span>電話：<b>${esc(h.customer_phone)}</b></span>` : ''}${h.customer_address ? `<span>地址：<b>${esc(h.customer_address)}</b></span>` : ''}
+      <span>來源：<b>${esc(h.source)}</b></span><span>匯入時間：<b>${esc(h.imported_at)}</b></span></p>
+    ${table(['貨號', '品名', '規格', ['數量', 'num'], ['單價', 'num'], ['小計', 'num'], '備註'],
+      h.lines.map(l => [esc(l.code), esc(l.name), esc(l.spec), l.qty, money(l.unit_price), money(l.subtotal), esc(l.note)]), '這張單沒有品項明細')}
+    <p style="text-align:right">銷貨總額 ${money(h.subtotal)}　營業稅 ${money(h.tax)}　<b class="big-total">${money(h.total)}</b></p></div>
+    <div class="actions"><button class="btn danger" id="hd-del" style="margin-right:auto">刪除這筆匯入</button><button class="btn" id="hd-close">關閉</button></div>`, true);
+  $('#hd-close', d).onclick = () => d.close();
+  $('#hd-del', d).onclick = async () => {
+    if (!await confirmBox('刪除歷史銷貨', '只會刪除這筆匯入的紀錄（不影響庫存），刪除會寫進操作紀錄。確定嗎？', '刪除', true)) return;
+    await call('delete_history', { id });
+    toast('已刪除');
+    d.close();
+    route();
+  };
+}
 
 function debounce(fn, ms = 300) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
@@ -777,12 +908,12 @@ PAGES.specs = async main => {
 };
 
 // ---- 報表 ----
-const REPORTS = [['inventory', '即時庫存表'], ['purchases', '進貨報表'], ['sales', '銷貨報表'], ['quarterly', '季度收益'], ['slow', '滯銷品'], ['top', '熱銷排行']];
+const REPORTS = [['inventory', '即時庫存表'], ['purchases', '進貨報表'], ['sales', '銷貨報表'], ['quarterly', '季度收益'], ['monthly', '月營業額'], ['slow', '滯銷品'], ['top', '熱銷排行'], ['history', '歷史銷貨']];
 
 PAGES.reports = async (main, arg) => {
   const name = REPORTS.some(r => r[0] === arg) ? arg : 'inventory';
   const prm = drafts.reportParams ??= { start: monthStart(), end: today(), days: 60 };
-  const ranged = ['purchases', 'sales', 'top'].includes(name);
+  const ranged = ['purchases', 'sales', 'top', 'history'].includes(name);
   main.innerHTML = head('報表', '可匯出 Excel；「更新三大報表」產生進貨、銷貨、收益三個工作表',
       '<button class="btn" id="r-three">更新三大報表</button><button class="btn" data-open="reports">開啟報表資料夾</button>') + `
     <section class="card"><div class="tabs">${REPORTS.map(([k, l]) => `<a href="#/reports/${k}" class="${k === name ? 'on' : ''}">${l}</a>`).join('')}</div>
