@@ -1,0 +1,11 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">首頁</a> › {{ title }}</div>{% endblock %}
+{% block content %}
+<p>依目前資料重新產生 Excel，包含三個工作表：<b>進貨系統</b>、<b>銷貨系統</b>、<b>收益計算</b>（全部期間，已作廢的單據不列入）。</p>
+<p>檔案位置：<code>{{ path }}</code><br>
+上次更新：{% if updated %}{{ updated|date:"Y-m-d H:i:s" }}{% else %}尚未產生{% endif %}</p>
+<form method="post">{% csrf_token %}
+  <button type="submit" class="button default">更新三大報表</button>
+  {% if updated %}<a class="button" href="?download=1">下載</a>{% endif %}
+</form>
+{% endblock %}

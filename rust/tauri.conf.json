@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "服飾庫存系統",
+  "version": "0.1.0",
+  "identifier": "tw.local.clothes-stock",
+  "build": {
+    "frontendDist": "ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "服飾庫存系統",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 980,
+        "minHeight": 620
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.ico"]
+  }
+}

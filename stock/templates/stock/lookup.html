@@ -1,0 +1,48 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}
+<style>
+  .lookup-form { display: flex; gap: .5em; margin-bottom: 1.5em; }
+  .lookup-form input[type=search] { font-size: 1.2em; padding: .3em .5em; width: 22em; max-width: 100%; }
+  .lookup-card { display: flex; flex-wrap: wrap; gap: 1.5em; align-items: flex-start; }
+  .lookup-card img { max-width: 240px; max-height: 240px; }
+  .matrix { overflow-x: auto; }
+  .matrix td, .matrix th { text-align: center; min-width: 3em; }
+  .matrix td.low { color: #ba2121; font-weight: bold; }
+  .matrix td.none { color: var(--body-quiet-color); }
+</style>
+{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">首頁</a> › {{ title }}</div>{% endblock %}
+{% block content %}
+<form class="lookup-form" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="輸入本店貨號、SKU、條碼或品名" autofocus>
+  <button type="submit" class="button default">查詢</button>
+</form>
+
+{% if q and not products %}<p>找不到「{{ q }}」。</p>{% endif %}
+
+{% if products|length > 1 %}
+  <p>找到 {{ products|length }} 筆，請點選：</p>
+  <ul>{% for p in products %}<li><a href="?q={{ p.code }}">{{ p.code }} {{ p.name }}</a></li>{% endfor %}</ul>
+{% endif %}
+
+{% for p, sizes, rows, total in results %}
+<div class="lookup-card">
+  {% if p.image %}<a href="{{ p.image.url }}" target="_blank"><img src="{{ p.image.url }}" alt=""></a>{% endif %}
+  <div>
+    <h2>{{ p.code }} {{ p.name }}</h2>
+    <p>類別：{{ p.get_category_display }}　廠商貨號：{{ p.supplier_code|default:"-" }}　建議售價：{{ p.list_price|floatformat:0 }}<br>
+       建檔日期：{{ p.code_date|date:"Y-m-d" }}　<b>總庫存：{{ total }}</b>
+       <a href="{% url 'admin:stock_product_change' p.pk %}">商品資料</a></p>
+    {% if rows %}
+    <div class="matrix"><table>
+      <thead><tr><th>顏色 \ 尺寸</th>{% for s in sizes %}<th>{{ s.code }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for color, cells in rows %}<tr><th>{{ color.name }}</th>
+        {% for v in cells %}{% if v %}<td class="{% if v.qty_on_hand < v.safety_stock %}low{% elif not v.qty_on_hand %}none{% endif %}" title="{{ v.sku }}">{{ v.qty_on_hand }}</td>{% else %}<td class="none">—</td>{% endif %}{% endfor %}
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    <p class="help">紅字：低於安全庫存</p>
+    {% else %}<p>此商品尚未建立 SKU。</p>{% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,17 @@
+# Python / Django 舊版
+.venv/
+__pycache__/
+build/
+dist/
+db.sqlite3
+media/
+報表/
+
+# Rust / Tauri
+rust/target/
+rust/gen/
+
+# 執行時產生的店內資料
+庫存資料.sqlite3*
+圖片/
+備份/

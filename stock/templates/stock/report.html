@@ -1,0 +1,42 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}
+<style>
+  .report-menu a { margin-right: 1em; }
+  .report-menu a.on { font-weight: bold; text-decoration: underline; }
+  .report-filter { margin: 1em 0; display: flex; flex-wrap: wrap; gap: .5em 1em; align-items: center; }
+  .report-wrap { overflow-x: auto; }
+  .report-table td img { max-height: 60px; max-width: 60px; }
+  .report-table td.num { text-align: right; }
+</style>
+{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">首頁</a> › 報表 › {{ title }}</div>{% endblock %}
+{% block content %}
+<div class="report-menu">
+  {% for key, label in menu %}<a href="{% url 'report' key %}" {% if key == name %}class="on"{% endif %}>{{ label }}</a>{% endfor %}
+</div>
+<form class="report-filter" method="get">
+  {% if name == 'purchases' or name == 'sales' or name == 'top' %}
+    <label>起 <input type="date" name="start" value="{{ params.start|date:'Y-m-d' }}"></label>
+    <label>迄 <input type="date" name="end" value="{{ params.end|date:'Y-m-d' }}"></label>
+  {% endif %}
+  {% if name == 'slow' %}
+    <label>天數 <input type="number" name="days" min="1" value="{{ params.days }}" style="width:5em"></label>
+  {% endif %}
+  <button type="submit" class="button">查詢</button>
+  <button type="submit" class="button" name="format" value="xlsx">匯出 Excel</button>
+  <span>共 {{ rep.rows|length }} 筆</span>
+</form>
+<div class="report-wrap">
+<table class="report-table">
+  <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% load stock_tags %}
+  {% for row in rep.rows %}
+    <tr>{% for cell in row %}{% cell cell forloop.counter0 image_cols %}{% endfor %}</tr>
+  {% empty %}
+    <tr><td colspan="{{ headers|length }}">沒有資料</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

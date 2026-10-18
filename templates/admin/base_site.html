@@ -1,0 +1,21 @@
+{% extends "admin/base.html" %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+{% block branding %}
+<div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a></div>
+{% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}
+{% endblock %}
+{% block nav-global %}
+{% if user.is_staff %}
+<div style="padding: 0 40px 8px; font-size: 14px;">
+  <a href="{% url 'lookup' %}"><b>貨號查詢庫存</b></a>
+  {% if perms.stock.view_cost %} · <a href="{% url 'update_reports' %}"><b>更新三大報表</b></a>{% endif %}
+  ｜ 報表：
+  <a href="{% url 'report' 'inventory' %}">即時庫存</a> ·
+  <a href="{% url 'report' 'purchases' %}">進貨</a> ·
+  <a href="{% url 'report' 'sales' %}">銷貨</a> ·
+  <a href="{% url 'report' 'quarterly' %}">季度收益</a> ·
+  <a href="{% url 'report' 'slow' %}">滯銷品</a> ·
+  <a href="{% url 'report' 'top' %}">熱銷排行</a>
+</div>
+{% endif %}
+{% endblock %}
