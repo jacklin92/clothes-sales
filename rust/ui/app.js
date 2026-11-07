@@ -168,6 +168,53 @@ function matrixTable(p, render) {
 
 const stockCell = v => `<td class="${v.qty_on_hand < v.safety_stock ? 'low' : v.qty_on_hand ? '' : 'zero'}" title="${esc(v.sku)}">${v.qty_on_hand}</td>`;
 
+// ---------- 尺寸表（胸圍、腰圍…，單位公分） ----------
+const MEASURE_DEFAULT = ['胸圍', '腰圍', '臀圍', '衣長'];
+function measureParse(p) {
+  try { const m = JSON.parse(p.measures || 'null'); return m?.items ? m : null; } catch { return null; }
+}
+
+/** 唯讀尺寸表，依商品現有尺寸排序；沒有資料時回傳空字串 */
+function measureView(p) {
+  const m = measureParse(p);
+  if (!m?.items.length) return '';
+  const rows = matrixParts(p).sizes.filter(s => m.rows[s.size])
+    .map(s => [`<b>${esc(s.size)}</b>`, ...m.items.map((_, i) => esc(m.rows[s.size][i]))]);
+  return rows.length ? `<div style="margin-bottom:16px"><h3>尺寸表<small class="muted">（公分）</small></h3>${table(['尺寸', ...m.items], rows)}</div>` : '';
+}
+
+/** 商品頁的尺寸表編輯器：欄為量測項目（可增刪改名），列為商品現有尺寸 */
+function measureEditor(box, p) {
+  const m = measureParse(p) || { items: [...MEASURE_DEFAULT], rows: {} };
+  const { sizes } = matrixParts(p);
+  if (!sizes.length) { box.innerHTML = '<div class="empty">請先在上方勾選顏色與尺寸建立 SKU，再填尺寸表。</div>'; return; }
+  const render = () => {
+    box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>尺寸</th>${m.items.map((it, i) => `<th>
+        <input data-mi="${i}" value="${esc(it)}" placeholder="項目名稱" aria-label="量測項目名稱" style="width:84px">
+        <button class="icon-btn" data-mdel="${i}" title="移除這個項目">×</button></th>`).join('')}</tr></thead>
+      <tbody>${sizes.map(s => `<tr><th>${esc(s.size)}</th>${m.items.map((it, i) => `<td><input data-ms="${esc(s.size)}" data-mc="${i}"
+        value="${esc(m.rows[s.size]?.[i] ?? '')}" style="width:84px" aria-label="${esc(s.size)} ${esc(it)}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      <div class="row" style="margin-top:12px"><button class="btn small" id="ms-add">＋ 加量測項目</button>
+        <span class="hint">單位公分，可填範圍（例 96-100）；空白的尺寸不顯示</span>
+        <button class="btn primary" id="ms-save" style="margin-left:auto">儲存尺寸表</button></div>`;
+    $$('[data-mi]', box).forEach(i => i.oninput = () => m.items[i.dataset.mi] = i.value);
+    $$('[data-ms]', box).forEach(i => i.oninput = () => (m.rows[i.dataset.ms] ??= [])[i.dataset.mc] = i.value);
+    $$('[data-mdel]', box).forEach(b => b.onclick = () => {
+      const i = +b.dataset.mdel;
+      m.items.splice(i, 1);
+      Object.values(m.rows).forEach(r => r.splice(i, 1));
+      render();
+    });
+    $('#ms-add', box).onclick = () => { m.items.push(''); render(); $(`[data-mi="${m.items.length - 1}"]`, box).focus(); };
+    $('#ms-save', box).onclick = async () => {
+      const rows = Object.fromEntries(sizes.map(s => [s.size, m.items.map((_, i) => m.rows[s.size]?.[i] ?? '')]));
+      await call('save_measures', { id: p.id, items: m.items, rows });
+      toast('已儲存尺寸表');
+    };
+  };
+  render();
+}
+
 /** mode: sale｜purchase｜opening（期初庫存）回傳 [{variant, qty, price}]；pick 回傳單一 variant */
 function pickMatrix(product, mode) {
   const incoming = mode === 'purchase' || mode === 'opening';
@@ -183,7 +230,7 @@ function pickMatrix(product, mode) {
         : matrixTable(p, v => `<td><input type="number" min="${mode === 'sale' ? '' : 0}" step="1" data-v="${v.id}" placeholder="0" aria-label="${esc(v.sku)}"><small>庫存 ${v.qty_on_hand}</small></td>`);
       d.innerHTML = `<h2>${esc(p.code)} ${esc(p.name)}</h2>
         <p class="muted">${mode === 'pick' ? '點選要調整的顏色尺寸' : '在格子裡填數量，空白表示不加入'}</p>
-        <div class="dlg-body">${body}
+        <div class="dlg-body">${body}${mode === 'sale' ? measureView(p) : ''}
         ${mode === 'pick' ? '' : `<div class="row" style="margin-top:14px"><label>${priceLabel}${incoming ? ' *' : ''}
           <input type="number" id="m-price" min="0" step="1" value="${mode === 'sale' ? dollars(p.list_price) : (drafts.lastCost?.[p.id] ?? '')}"></label>
           ${incoming ? '<button class="btn small" id="m-add" style="align-self:flex-end">＋ 加顏色／尺寸</button>' : ''}</div>`}
@@ -721,6 +768,7 @@ PAGES.lookup = async (main, arg) => {
         <span>總庫存 <b>${p.stock}</b> 件</span></p>
       ${matrixTable(p, stockCell)}
       <p class="hint">紅字：低於安全庫存；灰字：沒有庫存</p>
+      ${measureView(p)}
       <div class="row"><a class="btn small" href="#/product/${p.id}">編輯商品</a><a class="btn small" href="#/docs/${encodeURIComponent(p.code)}">相關單據</a></div>
       </div></div></section>`;
   };
@@ -845,7 +893,9 @@ PAGES.product = async (main, arg) => {
         `<input type="number" min="0" step="1" data-vs="${v.id}" value="${v.safety_stock}">`,
         v.qty_on_hand, money(v.avg_cost),
         v.used ? '<span class="muted" title="已有單據，不可刪除">使用中</span>' : `<button class="icon-btn" data-vdel="${v.id}" title="刪除 SKU">×</button>`]),
-      '還沒有 SKU，請在上方勾選顏色與尺寸後儲存')}</section>` : ''}`;
+      '還沒有 SKU，請在上方勾選顏色與尺寸後儲存')}</section>
+    <section class="card"><h2>尺寸表<small>胸圍、腰圍、臀圍等，單位公分</small></h2><div id="ms"></div></section>` : ''}`;
+  if (p.id) measureEditor($('#ms'), p);
   const form = $('#pf');
   bindProductForm(form);
   $('#pf-save').onclick = async () => {

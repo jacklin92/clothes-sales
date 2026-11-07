@@ -433,3 +433,6 @@ dialog ::-webkit-scrollbar-track { background: rgba(100, 73, 43, .08); }
 
 /* 卡片的模糊只有 1px、肉眼看不出，關掉可省約 20 MB GPU 記憶體；選單、標題與按鈕保留 */
 .card, .stat, .big-btn { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.help .tip { margin: 10px 0 0; padding: 8px 12px; border-left: 3px solid var(--gold); background: var(--soft); border-radius: 6px; }
+.help details { margin-top: 10px; }
+.help summary { cursor: pointer; color: var(--gold); }

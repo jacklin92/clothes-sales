@@ -365,6 +365,34 @@ pub fn update_variant(c: &mut Connection, id: i64, safety_stock: i64) -> Result<
     Ok(())
 }
 
+/// 商品尺寸表，存成 {"items": ["胸圍", ...], "rows": {"M": ["96", ...]}}，以尺寸代碼對應（代碼建立後不可改）。
+/// 數值存文字，可填「96-100」這類範圍；整列空白的尺寸不保存。
+pub fn save_measures(c: &mut Connection, id: i64, items: Vec<String>, rows: BTreeMap<String, Vec<String>>) -> Result<()> {
+    let items: Vec<String> = items.iter().map(|s| s.trim().to_string()).collect();
+    if items.iter().any(String::is_empty) {
+        return bail("量測項目名稱不可空白");
+    }
+    if items.iter().collect::<BTreeSet<_>>().len() != items.len() {
+        return bail("量測項目名稱重複");
+    }
+    let rows: BTreeMap<String, Vec<String>> = rows
+        .into_iter()
+        .map(|(k, v)| (k, (0..items.len()).map(|i| v.get(i).map_or("", |s| s.trim()).to_string()).collect::<Vec<_>>()))
+        .filter(|(_, v)| v.iter().any(|s| !s.is_empty()))
+        .collect();
+    let new = if items.is_empty() { String::new() } else { json!({"items": items, "rows": rows}).to_string() };
+    let tx = tx(c)?;
+    let (code, old): (String, String) =
+        tx.query_row("SELECT code, measures FROM product WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    if old != new {
+        tx.execute("UPDATE product SET measures=?2 WHERE id=?1", params![id, new])?;
+        let detail = rows.iter().map(|(k, v)| format!("{k}：{}", v.join("/"))).collect::<Vec<_>>().join("、");
+        log(&tx, "修改尺寸表", &code, &if items.is_empty() { "清空".into() } else { format!("{}；{detail}", items.join("/")) })?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// 查詢：SKU 完全相符時回傳 variant；另依貨號或品名找商品（含各 SKU 庫存）。
 pub fn find(c: &Connection, q: &str) -> Result<Value> {
     let q = q.trim();

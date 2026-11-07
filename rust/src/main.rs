@@ -151,6 +151,11 @@ fn update_variant(app: State<'_, App>, id: i64, safety: i64) -> Result<()> {
 }
 
 #[tauri::command(async)]
+fn save_measures(app: State<'_, App>, id: i64, items: Vec<String>, rows: std::collections::BTreeMap<String, Vec<String>>) -> Result<()> {
+    store::save_measures(&mut app.db(), id, items, rows)
+}
+
+#[tauri::command(async)]
 fn find(app: State<'_, App>, q: String) -> Result<Value> {
     store::find(&app.db(), &q)
 }
@@ -306,7 +311,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             meta, dashboard, suppliers, save_supplier, colors, sizes, save_color, save_size, delete_item,
-            products, product, save_product, add_variants, update_variant, find, save_image,
+            products, product, save_product, add_variants, update_variant, save_measures, find, save_image,
             create_doc, docs, doc, void_doc, report, export_report, export_three, export_sale, import_history, histories, history_doc, delete_history, audit, recalc_all, open_folder,
         ])
         .run(tauri::generate_context!())

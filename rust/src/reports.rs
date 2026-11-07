@@ -71,7 +71,7 @@ pub fn build(c: &Connection, name: &str, p: &Params) -> Result<Report> {
                   ("目前庫存", Int), ("最後銷貨日", Date), ("首次進貨日", Date)],
                 rows(c, "SELECT p.image, p.code, v.sku, p.name, c.name, z.code, v.qty_on_hand, v.ls, v.fi FROM (SELECT v.*, \
                     (SELECT max(d.date) FROM line l JOIN doc d ON d.id=l.doc_id WHERE l.variant_id=v.id AND d.type='SO' AND d.status='posted') ls, \
-                    (SELECT min(d.date) FROM line l JOIN doc d ON d.id=l.doc_id WHERE l.variant_id=v.id AND d.type='PO' AND d.status='posted') fi \
+                    (SELECT min(d.date) FROM line l JOIN doc d ON d.id=l.doc_id WHERE l.variant_id=v.id AND d.type<>'SO' AND l.qty>0 AND d.status='posted') fi \
                     FROM variant v WHERE v.qty_on_hand > 0) v \
                     JOIN product p ON p.id=v.product_id JOIN color c ON c.id=v.color_id JOIN size z ON z.id=v.size_id \
                     WHERE coalesce(v.ls, v.fi, ?1) <= ?2 ORDER BY coalesce(v.ls, v.fi)", [today.to_string(), cutoff])?)

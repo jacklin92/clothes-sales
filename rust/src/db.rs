@@ -153,6 +153,13 @@ pub fn open(path: &Path) -> Result<Connection> {
         log(&tx, "升級資料庫", "v2", "新增課稅別、營業稅、客戶資料與歷史銷貨")?;
         tx.commit()?;
     }
+    if ver < 3 {
+        let tx = c.unchecked_transaction()?;
+        tx.execute_batch("ALTER TABLE product ADD COLUMN measures TEXT NOT NULL DEFAULT '';")?;
+        tx.pragma_update(None, "user_version", 3)?;
+        log(&tx, "升級資料庫", "v3", "新增商品尺寸表")?;
+        tx.commit()?;
+    }
     Ok(c)
 }
 
